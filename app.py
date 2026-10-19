@@ -24,7 +24,7 @@ def init_supabase():
 supabase: Client = init_supabase()
 
 # =========================================================
-# FUNÇÕES DE RASTREAMENTO E CONVERSÃO KML
+# FUNÇÕES DE RASTREAMENTO E CONVERSÃO KML (SOS RASTREAMENTO)
 # =========================================================
 
 def extrair_texto_stream(uploaded_file):
@@ -75,10 +75,6 @@ REGEX_DATA_HORA = re.compile(
 )
 
 def limpar_cabecalhos_e_resumos(texto):
-    """
-    Remove linhas inteiras ou trechos de cabeçalho de emissão, gerado em, 
-    períodos de relatório e metadados com fuso horário (ex: GMT -03).
-    """
     padroes_cabecalho = [
         r"(?:emiss[aã]o|emitido|gerado|impresso|relat[oó]rio|consulta|exportado|data\s+atual)[^\n]*?\d{2}[/-]\d{2}[/-]\d{2,4}[^\n]*",
         r"(?:per[ií]odo|intervalo)\s*:?\s*\d{2}[/-]\d{2}[/-]\d{2,4}.*?(?:\n|$)",
@@ -151,110 +147,68 @@ def extrair_velocidade_segura(trecho):
 def extrair_pontos(texto_bruto):
     registos = []
     texto = limpar_cabecalhos_e_resumos(texto_bruto)
-    texto_unido = re.sub(r"(-?\d{1,2}[.,]\d{2,6})\s+(\d{2,5})(?=\s+-\d{2}[.,]|\s|$)", r"\1\2", texto)
+    
+    # Padrão específico otimizado para relatórios SOS Rastreamento
+    # Procura data/hora seguida de coordenadas de latitude e longitude negativas
+    padrao_sos = re.finditer(
+        r"(\d{2}/\d{2}/\d{2,4})\s+(\d{2}:\d{2}:\d{2}).*?(-[0-5]\.\d{4,}).*?(-3[5-6]\.\d{4,})",
+        texto,
+        re.DOTALL | re.IGNORECASE
+    )
+    
+    for m in padrao_sos:
+        d_str, h_str, lat_str, lon_str = m.groups()
+        iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
+        if not iso_ts:
+            continue
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+        except ValueError:
+            continue
+            
+        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
+            continue
+            
+        trecho = m.group(0)
+        vel = extrair_velocidade_segura(trecho)
+        ign = "DESLIGADA" if "desligad" in trecho.lower() else "LIGADA"
+        
+        registos.append({
+            "iso_ts": iso_ts,
+            "data": d_fmt,
+            "hora": h_fmt,
+            "lat": lat,
+            "lon": lon,
+            "speed": vel,
+            "ignicao": ign
+        })
+        
+    if registos:
+        return registos
 
-    # 1. Padrão URL Google Maps
+    # Fallback genérico para outros layouts caso necessário
+    texto_unido = re.sub(r"(-?\d{1,2}[.,]\d{2,6})\s+(\d{2,5})(?=\s+-\d{2}[.,]|\s|$)", r"\1\2", texto)
     for m_url in re.finditer(r"q=\s*([-0-9.,]+)\s*,\s*([-0-9.,]+)", texto_unido):
         try:
             lat = converter_coord(m_url.group(1))
             lon = converter_coord(m_url.group(2))
         except ValueError:
             continue
-
         if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
             continue
-
         ini_janela = max(0, m_url.start() - 150)
         fim_janela = min(len(texto_unido), m_url.end() + 150)
         vizinhanca = texto_unido[ini_janela:fim_janela]
-
         dts = list(REGEX_DATA_HORA.finditer(vizinhanca))
         if dts:
             m_dt = dts[-1]
             iso_ts, d_fmt, h_fmt = padronizar_data_hora(m_dt.group(1), m_dt.group(2))
             if iso_ts:
-                viz_sem_dt = vizinhanca[:m_dt.start()] + " " + vizinhanca[m_dt.end():]
-                viz_sem_dt = re.sub(r"https?://\S+", "", viz_sem_dt)
-                vel = extrair_velocidade_segura(viz_sem_dt)
-                ign_m = re.search(r"\b(LIGAD[AO]|DESLIGAD[AO])\b", vizinhanca, re.I)
-                ign = ign_m.group(1).upper() if ign_m else ("LIGADA" if float(vel) > 0 else "DESLIGADA")
-
                 registos.append({
                     "iso_ts": iso_ts, "data": d_fmt, "hora": h_fmt,
-                    "lat": lat, "lon": lon, "speed": vel, "ignicao": ign,
+                    "lat": lat, "lon": lon, "speed": "0", "ignicao": "LIGADA"
                 })
-
-    if registos:
-        return registos
-
-    # 2. Padrão Multilinha/Quebrado
-    padrao_coords_quebradas = re.compile(r"(-[0-3]?\d[.,]\d+)\s*(\d*)\s*[;,\s]+\s*(-[3-7]\d[.,]\d+)\s*(\d*)")
-    matches_c = list(padrao_coords_quebradas.finditer(texto))
-    if matches_c:
-        for i, mc in enumerate(matches_c):
-            try:
-                lat = converter_coord(f"{mc.group(1)}{mc.group(2)}")
-                lon = converter_coord(f"{mc.group(3)}{mc.group(4)}")
-            except ValueError:
-                continue
-
-            if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
-                continue
-
-            lim_ant = matches_c[i - 1].end() if i > 0 else max(0, mc.start() - 280)
-            lim_prox = matches_c[i + 1].start() if i + 1 < len(matches_c) else min(len(texto), mc.end() + 180)
-
-            bloco_antes = texto[max(lim_ant, mc.start() - 280):mc.start()]
-            bloco_depois = texto[mc.end():min(lim_prox, mc.end() + 140)]
-
-            m_resumo = re.search(r"(?:COMBUST[IÍ]VEL|PERCORRIDO\s+DESLIGADO).*?\n", bloco_antes, re.I)
-            if m_resumo:
-                bloco_antes = bloco_antes[m_resumo.end():]
-
-            dts_antes = list(REGEX_DATA_HORA.finditer(bloco_antes))
-            dts_depois = list(REGEX_DATA_HORA.finditer(bloco_depois))
-
-            m_dt = dts_antes[-1] if dts_antes else (dts_depois[0] if dts_depois else None)
-
-            if m_dt:
-                iso_ts, d_fmt, h_fmt = padronizar_data_hora(m_dt.group(1), m_dt.group(2))
-                if iso_ts:
-                    trecho_info = bloco_antes[m_dt.end():] + " " + bloco_depois
-                    vel = extrair_velocidade_segura(trecho_info)
-                    ign = (
-                        "DESLIGADA" if "desligad" in trecho_info.lower()
-                        else ("LIGADA" if "ligad" in trecho_info.lower() else ("LIGADA" if float(vel) > 0 else "DESLIGADA"))
-                    )
-                    registos.append({
-                        "iso_ts": iso_ts, "data": d_fmt, "hora": h_fmt,
-                        "lat": lat, "lon": lon, "speed": vel, "ignicao": ign,
-                    })
-
-    if registos:
-        return registos
-
-    # 3. Fallback
-    padrao_colunar = re.finditer(
-        r"(-?\d{1,2}[.,]\d{3,})\s*[,;\s]\s*(-?\d{1,3}[.,]\d{3,}).*?(\d{2}[/-]\d{2}[/-]\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?)",
-        texto,
-    )
-    for m in padrao_colunar:
-        lat = converter_coord(m.group(1))
-        lon = converter_coord(m.group(2))
-        if 0 < lat < 35: lat = -lat
-        if 30 < lon < 80: lon = -lon
-
-        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
-            continue
-
-        iso_ts, d_fmt, h_fmt = padronizar_data_hora(m.group(3), m.group(4))
-        if iso_ts:
-            vel = extrair_velocidade_segura(m.group(0))
-            registos.append({
-                "iso_ts": iso_ts, "data": d_fmt, "hora": h_fmt,
-                "lat": lat, "lon": lon, "speed": vel,
-                "ignicao": "LIGADA" if float(vel) > 0 else "DESLIGADA",
-            })
 
     return registos
 
@@ -400,7 +354,6 @@ aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_c
     "🗺️ Conversor Rastreamento (KML)"
 ])
 
-# Função para renderizar cards
 def exibir_cards(df_sub, chave_aba):
     if df_sub.empty:
         st.info("Nenhum registro encontrado para esta seleção.")
