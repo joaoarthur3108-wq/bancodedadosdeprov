@@ -143,11 +143,11 @@ def extrair_velocidade_segura(trecho):
 def extrair_pontos(texto_bruto):
     registos = []
     texto = limpar_cabecalhos_e_resumos(texto_bruto)
-    texto_linha = re.sub(r"\s+", " ", texto)
+    texto_unido = re.sub(r"\s+", " ", texto)
     
     padrao_sos = re.finditer(
         r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2}).*?(-[0-5]\s*[\.,]\s*\d+).*?(-3[5-6]\s*[\.,]\s*\d+)",
-        texto_linha,
+        texto_unido,
         re.IGNORECASE
     )
     
@@ -183,7 +183,7 @@ def extrair_pontos(texto_bruto):
     if registos:
         return registos
 
-    padrao_coords = re.finditer(r"(-[0-3]\.\d+).*?(-3[5-6]\.\d+).*?(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2})", texto_linha)
+    padrao_coords = re.finditer(r"(-[0-3]\.\d+).*?(-3[5-6]\.\d+).*?(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2})", texto_unido)
     for m in padrao_coords:
         lat_str, lon_str, d_str, h_str = m.groups()
         iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
