@@ -75,9 +75,14 @@ REGEX_DATA_HORA = re.compile(
 )
 
 def limpar_cabecalhos_e_resumos(texto):
+    """
+    Remove linhas inteiras ou trechos de cabeçalho de emissão, gerado em, 
+    períodos de relatório e metadados com fuso horário (ex: GMT -03).
+    """
     padroes_cabecalho = [
-        r"(?:emiss[aã]o|emitido|gerado|impresso|relat[oó]rio|consulta|exportado|data\s+atual)\s*:?\s*\d{2}[/-]\d{2}[/-]\d{2,4}\s*(?:às|-|\s)?\s*\d{1,2}:\d{2}(?::\d{2})?",
-        r"(?:per[ií]odo|intervalo)\s*:?\s*\d{2}[/-]\d{2}[/-]\d{2,4}\s*(?:\d{1,2}:\d{2}(?::\d{2})?)?\s*(?:a|at[eé]|-)\s*\d{2}[/-]\d{2}[/-]\d{2,4}\s*(?:\d{1,2}:\d{2}(?::\d{2})?)?",
+        # Remove linhas que contêm termos de emissão/geração seguidos de data/hora e fuso opcional
+        r"(?:emiss[aã]o|emitido|gerado|impresso|relat[oó]rio|consulta|exportado|data\s+atual)[^\n]*?\d{2}[/-]\d{2}[/-]\d{2,4}[^\n]*",
+        r"(?:per[ií]odo|intervalo)\s*:?\s*\d{2}[/-]\d{2}[/-]\d{2,4}.*?(?:\n|$)",
         r"\d{2}[/-]\d{2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?=\s*TOTAL\s+PERCORRIDO)",
     ]
     t_limpo = texto
