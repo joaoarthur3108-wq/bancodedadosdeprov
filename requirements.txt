@@ -2,3 +2,5 @@ streamlit
 pandas
 supabase
 opencv-python
+pypdf
+python-docx
