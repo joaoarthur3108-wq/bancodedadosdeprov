@@ -1,3 +1,4 @@
-pip install streamlit pandas deepface tf-keras supabase opencv-python
-
-winget install -e --id Microsoft.VisualStudio.Enterprise.Insiders --override "--passive --config .\.vsconfig --installPath <vs-install-dir>"
+streamlit
+pandas
+supabase
+opencv-python
