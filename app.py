@@ -27,7 +27,7 @@ supabase: Client = init_supabase()
 # FUNÇÕES DE RASTREAMENTO E CONVERSÃO KML (SOS RASTREAMENTO)
 # =========================================================
 
-def _texto_stream(uploaded_file):
+def extrair_texto_stream(uploaded_file):
     nome_arq = uploaded_file.name.lower()
     conteudo_bytes = uploaded_file.getvalue()
     
@@ -109,7 +109,7 @@ def padronizar_data_hora(data_str, hora_str):
             t_obj = t_obj.replace(hour=0)
         h_formatada = t_obj.strftime("%H:%M:%S")
     except ValueError:
-        return None, data_str, hora_str
+        return None, data_str, h_limpa
 
     formatos_data = [
         "%d/%m/%Y", "%d-%m-%Y",
@@ -129,11 +129,7 @@ def padronizar_data_hora(data_str, hora_str):
 
     return None, data_str, h_limpa
 
-def converter_coord(val_str):
-    limpo = re.sub(r"\s+", "", val_str).replace(",", ".")
-    return float(limpo)
-
-def _velocidade_segura(trecho):
+def extrair_velocidade_segura(trecho):
     m_vel = re.search(r"\b(\d{1,3}(?:[.,]\d+)?)\s*(?:km/h|km/hr|kmh|8\.6)\b", trecho, re.I)
     if m_vel:
         return m_vel.group(1).replace(",", ".")
@@ -145,14 +141,10 @@ def _velocidade_segura(trecho):
     return "0"
 
 def extrair_pontos(texto_bruto):
-   def extrair_pontos(texto_bruto):
     registos = []
     texto = limpar_cabecalhos_e_resumos(texto_bruto)
-    
-    # Padroniza quebras de linha em espaços para juntar blocos quebrados da tabela
     texto_linha = re.sub(r"\s+", " ", texto)
     
-    # Procura blocos contendo data, hora, latitude e longitude no formato SOS Rastreamento
     padrao_sos = re.finditer(
         r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2}).*?(-[0-5]\s*[\.,]\s*\d+).*?(-3[5-6]\s*[\.,]\s*\d+)",
         texto_linha,
@@ -191,7 +183,6 @@ def extrair_pontos(texto_bruto):
     if registos:
         return registos
 
-    # Fallback genérico caso o layout mude
     padrao_coords = re.finditer(r"(-[0-3]\.\d+).*?(-3[5-6]\.\d+).*?(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2})", texto_linha)
     for m in padrao_coords:
         lat_str, lon_str, d_str, h_str = m.groups()
@@ -206,62 +197,6 @@ def extrair_pontos(texto_bruto):
                     })
             except:
                 continue
-
-    return registos
-    
-    for m in padrao_sos:
-        d_str, h_str, lat_str, lon_str = m.groups()
-        iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
-        if not iso_ts:
-            continue
-        try:
-            lat = float(lat_str)
-            lon = float(lon_str)
-        except ValueError:
-            continue
-            
-        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
-            continue
-            
-        trecho = m.group(0)
-        vel = extrair_velocidade_segura(trecho)
-        ign = "DESLIGADA" if "desligad" in trecho.lower() else "LIGADA"
-        
-        registos.append({
-            "iso_ts": iso_ts,
-            "data": d_fmt,
-            "hora": h_fmt,
-            "lat": lat,
-            "lon": lon,
-            "speed": vel,
-            "ignicao": ign
-        })
-        
-    if registos:
-        return registos
-
-    # Fallback genérico para outros layouts caso necessário
-    texto_unido = re.sub(r"(-?\d{1,2}[.,]\d{2,6})\s+(\d{2,5})(?=\s+-\d{2}[.,]|\s|$)", r"\1\2", texto)
-    for m_url in re.finditer(r"q=\s*([-0-9.,]+)\s*,\s*([-0-9.,]+)", texto_unido):
-        try:
-            lat = converter_coord(m_url.group(1))
-            lon = converter_coord(m_url.group(2))
-        except ValueError:
-            continue
-        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
-            continue
-        ini_janela = max(0, m_url.start() - 150)
-        fim_janela = min(len(texto_unido), m_url.end() + 150)
-        vizinhanca = texto_unido[ini_janela:fim_janela]
-        dts = list(REGEX_DATA_HORA.finditer(vizinhanca))
-        if dts:
-            m_dt = dts[-1]
-            iso_ts, d_fmt, h_fmt = padronizar_data_hora(m_dt.group(1), m_dt.group(2))
-            if iso_ts:
-                registos.append({
-                    "iso_ts": iso_ts, "data": d_fmt, "hora": h_fmt,
-                    "lat": lat, "lon": lon, "speed": "0", "ignicao": "LIGADA"
-                })
 
     return registos
 
