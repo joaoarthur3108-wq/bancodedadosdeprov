@@ -27,7 +27,7 @@ supabase: Client = init_supabase()
 # FUNÇÕES DE RASTREAMENTO E CONVERSÃO KML (SOS RASTREAMENTO)
 # =========================================================
 
-def extrair_texto_stream(uploaded_file):
+def _texto_stream(uploaded_file):
     nome_arq = uploaded_file.name.lower()
     conteudo_bytes = uploaded_file.getvalue()
     
@@ -133,7 +133,7 @@ def converter_coord(val_str):
     limpo = re.sub(r"\s+", "", val_str).replace(",", ".")
     return float(limpo)
 
-def extrair_velocidade_segura(trecho):
+def _velocidade_segura(trecho):
     m_vel = re.search(r"\b(\d{1,3}(?:[.,]\d+)?)\s*(?:km/h|km/hr|kmh|8\.6)\b", trecho, re.I)
     if m_vel:
         return m_vel.group(1).replace(",", ".")
@@ -145,16 +145,69 @@ def extrair_velocidade_segura(trecho):
     return "0"
 
 def extrair_pontos(texto_bruto):
+   def extrair_pontos(texto_bruto):
     registos = []
     texto = limpar_cabecalhos_e_resumos(texto_bruto)
     
-    # Padrão específico otimizado para relatórios SOS Rastreamento
-    # Procura data/hora seguida de coordenadas de latitude e longitude negativas
+    # Padroniza quebras de linha em espaços para juntar blocos quebrados da tabela
+    texto_linha = re.sub(r"\s+", " ", texto)
+    
+    # Procura blocos contendo data, hora, latitude e longitude no formato SOS Rastreamento
     padrao_sos = re.finditer(
-        r"(\d{2}/\d{2}/\d{2,4})\s+(\d{2}:\d{2}:\d{2}).*?(-[0-5]\.\d{4,}).*?(-3[5-6]\.\d{4,})",
-        texto,
-        re.DOTALL | re.IGNORECASE
+        r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2}).*?(-[0-5]\s*[\.,]\s*\d+).*?(-3[5-6]\s*[\.,]\s*\d+)",
+        texto_linha,
+        re.IGNORECASE
     )
+    
+    for m in padrao_sos:
+        d_str, h_str, lat_raw, lon_raw = m.groups()
+        iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
+        if not iso_ts:
+            continue
+            
+        try:
+            lat = float(re.sub(r"\s+", "", lat_raw).replace(",", "."))
+            lon = float(re.sub(r"\s+", "", lon_raw).replace(",", "."))
+        except ValueError:
+            continue
+            
+        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
+            continue
+            
+        trecho = m.group(0)
+        vel = extrair_velocidade_segura(trecho)
+        ign = "DESLIGADA" if "desligad" in trecho.lower() else "LIGADA"
+        
+        registos.append({
+            "iso_ts": iso_ts,
+            "data": d_fmt,
+            "hora": h_fmt,
+            "lat": lat,
+            "lon": lon,
+            "speed": vel,
+            "ignicao": ign
+        })
+        
+    if registos:
+        return registos
+
+    # Fallback genérico caso o layout mude
+    padrao_coords = re.finditer(r"(-[0-3]\.\d+).*?(-3[5-6]\.\d+).*?(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2})", texto_linha)
+    for m in padrao_coords:
+        lat_str, lon_str, d_str, h_str = m.groups()
+        iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
+        if iso_ts:
+            try:
+                lat, lon = float(lat_str), float(lon_str)
+                if -35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0:
+                    registos.append({
+                        "iso_ts": iso_ts, "data": d_fmt, "hora": h_fmt,
+                        "lat": lat, "lon": lon, "speed": "0", "ignicao": "LIGADA"
+                    })
+            except:
+                continue
+
+    return registos
     
     for m in padrao_sos:
         d_str, h_str, lat_str, lon_str = m.groups()
