@@ -80,7 +80,6 @@ def limpar_cabecalhos_e_resumos(texto):
     períodos de relatório e metadados com fuso horário (ex: GMT -03).
     """
     padroes_cabecalho = [
-        # Remove linhas que contêm termos de emissão/geração seguidos de data/hora e fuso opcional
         r"(?:emiss[aã]o|emitido|gerado|impresso|relat[oó]rio|consulta|exportado|data\s+atual)[^\n]*?\d{2}[/-]\d{2}[/-]\d{2,4}[^\n]*",
         r"(?:per[ií]odo|intervalo)\s*:?\s*\d{2}[/-]\d{2}[/-]\d{2,4}.*?(?:\n|$)",
         r"\d{2}[/-]\d{2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?=\s*TOTAL\s+PERCORRIDO)",
@@ -162,6 +161,9 @@ def extrair_pontos(texto_bruto):
         except ValueError:
             continue
 
+        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
+            continue
+
         ini_janela = max(0, m_url.start() - 150)
         fim_janela = min(len(texto_unido), m_url.end() + 150)
         vizinhanca = texto_unido[ini_janela:fim_janela]
@@ -196,7 +198,7 @@ def extrair_pontos(texto_bruto):
             except ValueError:
                 continue
 
-            if not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
+            if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
                 continue
 
             lim_ant = matches_c[i - 1].end() if i > 0 else max(0, mc.start() - 280)
@@ -241,6 +243,9 @@ def extrair_pontos(texto_bruto):
         lon = converter_coord(m.group(2))
         if 0 < lat < 35: lat = -lat
         if 30 < lon < 80: lon = -lon
+
+        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
+            continue
 
         iso_ts, d_fmt, h_fmt = padronizar_data_hora(m.group(3), m.group(4))
         if iso_ts:
@@ -522,7 +527,7 @@ with aba_editar:
 
 with aba_cadastro:
     st.header("Cadastrar / Anexar Fotos")
-    tipo_op = st.radio("Selecione:", ["➕ Cadastrar Novo Indivíduo", "🖼️ Anexar Foto Exitsente"])
+    tipo_op = st.radio("Selecione:", ["➕ Cadastrar Novo Indivíduo", "🖼️ Anexar Foto Existente"])
     if tipo_op == "➕ Cadastrar Novo Indivíduo":
         with st.form("form_cad"):
             c1, c2 = st.columns(2)
@@ -555,6 +560,43 @@ with aba_cadastro:
                     }).execute()
                     st.success("Cadastrado com sucesso!")
                     st.rerun()
+    else:
+        if df_registros.empty:
+            st.info("Não há indivíduos cadastrados.")
+        else:
+            with st.form("form_anexar_foto", clear_on_submit=True):
+                opcoes_ind = [f"{row['nome']} | CPF: {row.get('cpf', 'N/A')} (ID: {row['id']})" for _, row in df_registros.iterrows()]
+                pessoa_selecionada = st.selectbox("Selecione o indivíduo:", opcoes_ind)
+                nova_foto_file = st.file_uploader("Selecione a nova foto (JPG, PNG)", type=["jpg", "jpeg", "png"])
+                
+                sub_anexar = st.form_submit_button("🖼️ Salvar Nova Foto")
+                
+                if sub_anexar:
+                    if nova_foto_file is not None:
+                        id_target = int(pessoa_selecionada.split("(ID: ")[1].replace(")", ""))
+                        reg_alvo = df_registros[df_registros["id"] == id_target].iloc[0]
+                        
+                        id_foto = int(pd.Timestamp.now().timestamp())
+                        extensao = nova_foto_file.name.split(".")[-1]
+                        nome_foto_storage = f"foto_{id_foto}.{extensao}"
+                        
+                        supabase.storage.from_("fotos").upload(
+                            nome_foto_storage, 
+                            nova_foto_file.getvalue(), 
+                            {"content-type": nova_foto_file.type}
+                        )
+                        url_nova = supabase.storage.from_("fotos").get_public_url(nome_foto_storage)
+                        
+                        fotos_existentes = extrair_lista_fotos(reg_alvo.get("foto_url"))
+                        fotos_existentes.append(url_nova)
+                        
+                        supabase.table("pessoas").update({
+                            "foto_url": json.dumps(fotos_existentes)
+                        }).eq("id", id_target).execute()
+                        
+                        st.success(f"✅ Foto anexada ao perfil de **{reg_alvo['nome']}**!")
+                    else:
+                        st.error("Selecione uma foto.")
 
 # =========================================================
 # ABA: CONVERSOR DE RASTREAMENTO (KML)
@@ -584,7 +626,7 @@ with aba_kml:
                 hr_inicio = datetime.strptime(validos[0]["hora"], "%H:%M:%S").time()
                 hr_fim = datetime.strptime(validos[-1]["hora"], "%H:%M:%S").time()
                 
-                st.subheader("⚙️ Filtro de Período (Opcional)")
+                st.subheader("⚙️ Filtro de Período")
                 c_f1, c_f2 = st.columns(2)
                 
                 with c_f1:
@@ -594,23 +636,27 @@ with aba_kml:
                     data_f = st.date_input("Data Final", value=dt_fim)
                     hora_f = st.time_input("Hora Final", value=hr_fim)
                 
-                iso_filtro_ini = f"{data_i.strftime('%Y-%m-%d')}T{hora_i.strftime('%H:%M:%S')}-03:00"
-                iso_filtro_fim = f"{data_f.strftime('%Y-%m-%d')}T{hora_f.strftime('%H:%M:%S')}-03:00"
+                iso_filtro_ini = f"{data_i.strftime('%Y-%m-%d')}T{hora_i.strftime('%H:%M:%S')}"
+                iso_filtro_fim = f"{data_f.strftime('%Y-%m-%d')}T{hora_f.strftime('%H:%M:%S')}"
                 
-                selecionados = [r for r in validos if iso_filtro_ini <= r["iso_ts"] <= iso_filtro_fim]
+                selecionados = [
+                    r for r in validos 
+                    if iso_filtro_ini <= r["iso_ts"][:19] <= iso_filtro_fim
+                ]
                 
                 if not selecionados:
-                    st.error("Nenhum ponto encontrado no intervalo de horário selecionado.")
-                else:
-                    st.info(f"📍 **{len(selecionados)}** pontos selecionados para a exportação.")
-                    
-                    conteudo_kml = gerar_conteudo_kml(selecionados, arquivo_upload.name)
-                    nome_base = os.path.splitext(arquivo_upload.name)[0]
-                    nome_kml_saida = f"{nome_base}_GERADO.kml"
-                    
-                    st.download_button(
-                        label="📥 Baixar Arquivo KML Otimizado",
-                        data=conteudo_kml.encode("utf-8"),
-                        file_name=nome_kml_saida,
-                        mime="application/vnd.google-earth.kml+xml"
-                    )
+                    st.warning("⚠️ Nenhum ponto exato no intervalo rigoroso. Exibindo todos os pontos válidos encontrados no arquivo para garantir a exportação:")
+                    selecionados = validos
+                
+                st.info(f"📍 **{len(selecionados)}** pontos selecionados para a exportação.")
+                
+                conteudo_kml = gerar_conteudo_kml(selecionados, arquivo_upload.name)
+                nome_base = os.path.splitext(arquivo_upload.name)[0]
+                nome_kml_saida = f"{nome_base}_GERADO.kml"
+                
+                st.download_button(
+                    label="📥 Baixar Arquivo KML Otimizado",
+                    data=conteudo_kml.encode("utf-8"),
+                    file_name=nome_kml_saida,
+                    mime="application/vnd.google-earth.kml+xml"
+                )
