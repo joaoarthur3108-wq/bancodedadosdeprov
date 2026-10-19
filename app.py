@@ -1,13 +1,11 @@
 import os
 import json
-import urllib.request
 import streamlit as st
 import pandas as pd
-from deepface import DeepFace
 from supabase import create_client, Client
 
 # Configuração da Página
-st.set_page_config(page_title="Sistema de Registros Inteligente", page_icon="📁", layout="wide")
+st.set_page_config(page_title="Sistema de Registros", page_icon="📁", layout="wide")
 
 # =========================================================
 # CONFIGURAÇÃO DE CONEXÃO COM O SUPABASE
@@ -20,9 +18,6 @@ def init_supabase():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase: Client = init_supabase()
-
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache_fotos_app")
-os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Função para extrair lista de URLs de fotos
 def extrair_lista_fotos(foto_val):
@@ -52,14 +47,13 @@ def carregar_dados():
 
 df_registros = carregar_dados()
 
-st.title("📁 Sistema de Registros e Processamento Facial")
-st.caption("☁️ Banco na nuvem (Supabase) | ⚡ IA local (DeepFace)")
+st.title("📁 Sistema de Gestão de Registros")
+st.caption("☁️ Banco de Dados na Nuvem (Supabase)")
 
-aba_consulta, aba_galeria, aba_editar, aba_ia, aba_cadastro = st.tabs([
+aba_consulta, aba_galeria, aba_editar, aba_cadastro = st.tabs([
     "🔍 Consultar Registros", 
     "👥 Galeria do Indivíduo",
     "✏️ Editar Registros",
-    "🤖 Reconhecimento Facial (IA)", 
     "➕ Cadastrar / Anexar Foto"
 ])
 
@@ -183,7 +177,6 @@ with aba_editar:
                 if sub_editar:
                     fotos_atuais = extrair_lista_fotos(reg_edit.get("foto_url"))
                     
-                    # Se foi enviado uma nova foto durante a edição, faz upload para o Storage
                     if nova_foto_add is not None:
                         id_foto = int(pd.Timestamp.now().timestamp())
                         extensao = nova_foto_add.name.split(".")[-1]
@@ -197,7 +190,6 @@ with aba_editar:
                         url_nova_foto = supabase.storage.from_("fotos").get_public_url(nome_foto_storage)
                         fotos_atuais.append(url_nova_foto)
                     
-                    # Atualiza os dados no Supabase
                     supabase.table("pessoas").update({
                         "nome": novo_nome,
                         "idade": nova_idade,
@@ -212,80 +204,7 @@ with aba_editar:
                     st.rerun()
 
 # =========================================================
-# ABA 4: RECONHECIMENTO FACIAL POR IA
-# =========================================================
-with aba_ia:
-    st.header("Busca por Proximidade Facial (IA)")
-    foto_consulta = st.file_uploader("Enviar Foto para Consulta", type=["jpg", "jpeg", "png"], key="consulta_ia")
-    
-    if foto_consulta is not None:
-        st.image(foto_consulta, width=200, caption="Foto enviada para análise")
-        
-        if st.button("Executar Reconhecimento Facial"):
-            with st.spinner("Analisando rostos..."):
-                try:
-                    temp_path = os.path.join(CACHE_DIR, "temp_consulta.jpg")
-                    with open(temp_path, "wb") as f:
-                        f.write(foto_consulta.getbuffer())
-                    
-                    for _, row in df_registros.iterrows():
-                        fotos = extrair_lista_fotos(row.get("foto_url"))
-                        for f_idx, url in enumerate(fotos):
-                            if url:
-                                local_filename = os.path.join(CACHE_DIR, f"reg_{row['id']}_f{f_idx}.jpg")
-                                if not os.path.exists(local_filename):
-                                    try: urllib.request.urlretrieve(url, local_filename)
-                                    except: continue
-                    
-                    dfs = DeepFace.find(
-                        img_path=temp_path, 
-                        db_path=CACHE_DIR, 
-                        model_name="VGG-Face", 
-                        enforce_detection=False,
-                        silent=True
-                    )
-                    
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    
-                    if len(dfs) > 0 and not dfs[0].empty:
-                        resultado_df = dfs[0]
-                        st.success("✅ Correspondência(s) encontrada(s)!")
-                        st.divider()
-                        
-                        vistos = set()
-                        for _, match_row in resultado_df.iterrows():
-                            caminho_encontrado = match_row["identity"]
-                            distancia = match_row["distance"]
-                            nome_arq = os.path.basename(caminho_encontrado)
-                            
-                            if nome_arq.startswith("reg_"):
-                                parts = nome_arq.split("_")
-                                id_reg = parts[1]
-                                
-                                if id_reg not in vistos:
-                                    vistos.add(id_reg)
-                                    reg_match = df_registros[df_registros["id"].astype(str) == str(id_reg)]
-                                    
-                                    if not reg_match.empty:
-                                        r = reg_match.iloc[0]
-                                        fotos_r = extrair_lista_fotos(r.get("foto_url"))
-                                        c_img, c_info = st.columns([1, 3])
-                                        with c_img:
-                                            st.image(fotos_r[0] if fotos_r else "https://via.placeholder.com/150", width=150)
-                                            st.caption(f"Distância Facial: {round(distancia, 4)}")
-                                        with c_info:
-                                            st.subheader(f"{r['nome']} (CPF: {r.get('cpf', 'N/A')})")
-                                            st.markdown(f"**Crimes:** {r.get('crimes', 'N/A')}")
-                                            st.markdown(f"**BOs / IPs:** {r.get('bos_ips', 'N/A')}")
-                                        st.divider()
-                    else:
-                        st.info("Nenhuma correspondência facial compatível encontrada.")
-                except Exception as e:
-                    st.error(f"Erro no processamento facial: {e}")
-
-# =========================================================
-# ABA 5: CADASTRAR NOVO OU ANEXAR FOTO
+# ABA 4: CADASTRAR NOVO OU ANEXAR FOTO
 # =========================================================
 with aba_cadastro:
     st.header("Cadastrar / Anexar Fotos")
