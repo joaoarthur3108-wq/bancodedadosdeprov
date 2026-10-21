@@ -67,10 +67,6 @@ def extrair_texto_stream(uploaded_file):
     return ""
 
 def limpar_cabecalhos_e_resumos(texto):
-    """
-    Remove estritamente cabeçalhos, rodapés, e carimbos de data/hora de geração do relatório 
-    para evitar que o extrator pegue o horário de emissão (ex: 16:02:25).
-    """
     padroes_cabecalho = [
         r"Relatório gerado em:.*?\(GMT -03\)",
         r"SOS Rastreamento - Natal.*?\n",
@@ -96,19 +92,11 @@ def extrair_velocidade_segura(trecho):
     return "0"
 
 def extrair_pontos(texto_bruto):
-    """
-    Extrator estrito da SOS Rastreamento: ignora carimbos de emissão e extrai 
-    somente as coordenadas e horários reais de movimento do veículo.
-    """
     registos = []
-    
-    # Limpa metadados e carimbos de geração do relatório antes de processar
     texto_limpo = limpar_cabecalhos_e_resumos(texto_bruto)
-    
     linhas = [l.strip() for l in texto_limpo.split("\n") if l.strip() and l.strip() != "---"]
     texto_pagina = " ".join(linhas)
     
-    # Procura pares de coordenadas (Latitude e Longitude) com tolerância a quebras
     coords_matches = list(re.finditer(r'(-[0-5]\s*[\.,]\s*\d+)\s*(\d*)\s+(-3[5-6]\s*[\.,]\s*\d+)\s*(\d*)', texto_pagina))
     
     for m in coords_matches:
@@ -124,14 +112,11 @@ def extrair_pontos(texto_bruto):
             continue
             
         sub_texto_antes = texto_pagina[:m.start()]
-        
-        # Extrai somente horários válidos no formato HH:MM:SS
         horas = re.findall(r'\b([0-2]\d:[0-5]\d:[0-5]\d)\b', sub_texto_antes)
         if not horas:
             continue
         hora = horas[-1]
         
-        # Blindagem extra: ignora se porventura capturar o horário do relatório gerado (16:02:25)
         if hora == "16:02:25":
             continue
             
@@ -350,8 +335,12 @@ with aba_oeste:
     st.header("🔵 Indivíduos - Zona Oeste")
     exibir_cards(df_registros[df_registros["zona"].astype(str).str.upper().str.contains("OESTE", na=False)], "oeste")
 
+# =========================================================
+# ABA: GALERIA DO INDIVÍDUO (MELHORADA)
+# =========================================================
 with aba_galeria:
     st.header("👥 Galeria de Fotos por Indivíduo")
+    st.caption("Visualização detalhada em alta resolução das fotografias cadastradas.")
     if not df_registros.empty:
         opcoes_pessoas = [f"{row['nome']} | CPF: {row.get('cpf', 'N/A')} (ID: {row['id']})" for _, row in df_registros.iterrows()]
         selecionado = st.selectbox("Selecione o indivíduo:", opcoes_pessoas, key="galeria_select")
@@ -362,11 +351,18 @@ with aba_galeria:
             st.markdown(f"**CPF:** {reg.get('cpf', 'N/A')} | **Idade:** {reg.get('idade', 'N/A')} | **Zona:** `{reg.get('zona', 'N/A')}`")
             fotos = extrair_lista_fotos(reg.get("foto_url"))
             if fotos:
-                cols = st.columns(min(len(fotos), 4))
+                st.markdown("---")
+                cols = st.columns(min(len(fotos), 3))
                 for idx, url_foto in enumerate(fotos):
-                    with cols[idx % 4]: st.image(url_foto, use_column_width=True, caption=f"Foto {idx+1}")
-            else: st.info("Nenhuma foto anexada.")
+                    with cols[idx % 3]:
+                        st.image(url_foto, use_column_width=True, caption=f"Foto {idx+1}")
+                        st.markdown(f"[🔗 Abrir imagem em tamanho real]({url_foto})", unsafe_allow_html=True)
+            else: 
+                st.info("Nenhuma foto anexada para este indivíduo.")
 
+# =========================================================
+# ABA: EDITAR REGISTROS (COM EXCLUSÃO DE FOTOS)
+# =========================================================
 with aba_editar:
     st.header("✏️ Editar Informações do Registro")
     if not df_registros.empty:
@@ -375,6 +371,7 @@ with aba_editar:
         if pessoa_edit:
             id_edit = int(pessoa_edit.split("(ID: ")[1].replace(")", ""))
             reg_edit = df_registros[df_registros["id"] == id_edit].iloc[0]
+            
             with st.form("form_edicao"):
                 c1, c2 = st.columns(2)
                 lista_zonas = ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"]
@@ -390,22 +387,41 @@ with aba_editar:
                     novos_enderecos = st.text_area("Endereços", value=str(reg_edit.get("enderecos", "")), height=100)
                 
                 novos_crimes = st.text_area("Crimes", value=str(reg_edit.get("crimes", "")), height=100)
-                nova_foto_add = st.file_uploader("Adicionar foto", type=["jpg", "jpeg", "png"])
+                
+                # SEÇÃO DE GERENCIAMENTO E EXCLUSÃO DE FOTOS ATUAIS
+                fotos_atuais = extrair_lista_fotos(reg_edit.get("foto_url"))
+                fotos_a_excluir = []
+                
+                if fotos_atuais:
+                    st.markdown("---")
+                    st.markdown("### 🖼️ Gerenciar Fotos Atuais")
+                    st.caption("Marque a caixa abaixo de cada foto que deseja **remover** do perfil:")
+                    f_cols = st.columns(min(len(fotos_atuais), 3))
+                    for idx, url_f in enumerate(fotos_atuais):
+                        with f_cols[idx % 3]:
+                            st.image(url_f, width=140)
+                            if st.checkbox(f"🗑️ Excluir Foto {idx+1}", key=f"del_foto_{id_edit}_{idx}"):
+                                fotos_a_excluir.append(url_f)
+                    st.markdown("---")
+                
+                nova_foto_add = st.file_uploader("Adicionar nova foto", type=["jpg", "jpeg", "png"])
                 
                 if st.form_submit_button("💾 Salvar Alterações"):
-                    fotos_atuais = extrair_lista_fotos(reg_edit.get("foto_url"))
+                    # Mantém apenas as fotos que NÃO foram marcadas para exclusão
+                    fotos_finais = [f for f in fotos_atuais if f not in fotos_a_excluir]
+                    
                     if nova_foto_add is not None:
                         id_foto = int(pd.Timestamp.now().timestamp())
                         ext = nova_foto_add.name.split(".")[-1]
                         nome_f = f"foto_{id_foto}.{ext}"
                         supabase.storage.from_("fotos").upload(nome_f, nova_foto_add.getvalue(), {"content-type": nova_foto_add.type})
-                        fotos_atuais.append(supabase.storage.from_("fotos").get_public_url(nome_f))
+                        fotos_finais.append(supabase.storage.from_("fotos").get_public_url(nome_f))
                     
                     supabase.table("pessoas").update({
                         "nome": novo_nome, "idade": nova_idade, "cpf": novo_cpf,
                         "zona": nova_zona, "enderecos": novos_enderecos,
                         "crimes": novos_crimes, "bos_ips": novos_bos_ips,
-                        "foto_url": json.dumps(fotos_atuais)
+                        "foto_url": json.dumps(fotos_finais)
                     }).eq("id", id_edit).execute()
                     st.success("Atualizado com sucesso!")
                     st.rerun()
