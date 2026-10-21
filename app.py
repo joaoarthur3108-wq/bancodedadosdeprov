@@ -410,14 +410,14 @@ with aba_editar:
             id_edit = int(pessoa_edit.split("(ID: ")[1].replace(")", ""))
             reg_edit = df_registros[df_registros["id"] == id_edit].iloc[0]
             
-            with st.form("form_edicao"):
+            with st.form(f"form_edicao_{id_edit}"):
                 c1, c2 = st.columns(2)
                 lista_zonas = ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"]
                 idx_z = lista_zonas.index(reg_edit.get("zona")) if reg_edit.get("zona") in lista_zonas else 0
                 
                 with c1:
                     novo_nome = st.text_input("Nome Completo", value=str(reg_edit.get("nome", "")))
-                    nova_nasc = st.text_input("Data de Nascimento (Ex: 01/01/2004)", value=str(reg_edit.get("data_nascimento", "")))
+                    nova_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)", value=str(reg_edit.get("data_nascimento", "")))
                     novo_cpf = st.text_input("CPF", value=str(reg_edit.get("cpf", "")))
                 with c2:
                     novo_mae = st.text_input("Nome da Mãe", value=str(reg_edit.get("nome_mae", "")))
@@ -438,7 +438,7 @@ with aba_editar:
                             st.image(url_f, width=130)
                             if st.checkbox(f"🗑️ Excluir Foto {idx+1}", key=f"del_foto_{id_edit}_{idx}"):
                                 fotos_a_excluir.append(url_f)
-                nova_foto_add = st.file_uploader("Adicionar nova foto principal", type=["jpg", "jpeg", "png"], key="add_p_foto")
+                nova_foto_add = st.file_uploader("Adicionar nova foto principal", type=["jpg", "jpeg", "png"], key=f"add_p_foto_{id_edit}")
 
                 tattoos_atuais = extrair_lista_fotos(reg_edit.get("tatuagem_url"))
                 tattoos_a_excluir = []
@@ -451,11 +451,16 @@ with aba_editar:
                             st.image(url_t, width=130)
                             if st.checkbox(f"🗑️ Excluir Tatuagem {idx+1}", key=f"del_tattoo_{id_edit}_{idx}"):
                                 tattoos_a_excluir.append(url_t)
-                nova_tattoo_add = st.file_uploader("Adicionar nova foto de tatuagem", type=["jpg", "jpeg", "png"], key="add_t_foto")
+                nova_tattoo_add = st.file_uploader("Adicionar nova foto de tatuagem", type=["jpg", "jpeg", "png"], key=f"add_t_foto_{id_edit}")
                 
-                if st.form_submit_button("💾 Salvar Alterações"):
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    salvar_edicao = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                with c_btn2:
+                    excluir_reg = st.form_submit_button("🗑️ Excluir Este Registro", type="secondary")
+                
+                if salvar_edicao:
                     idade_calculada = calcular_idade(nova_nasc)
-                    
                     fotos_finais = [f for f in fotos_atuais if f not in fotos_a_excluir]
                     if nova_foto_add is not None:
                         id_foto = int(pd.Timestamp.now().timestamp())
@@ -482,16 +487,21 @@ with aba_editar:
                     }).eq("id", id_edit).execute()
                     st.success("Atualizado com sucesso!")
                     st.rerun()
+                    
+                if excluir_reg:
+                    supabase.table("pessoas").delete().eq("id", id_edit).execute()
+                    st.success("Registro excluído com sucesso!")
+                    st.rerun()
 
 with aba_cadastro:
     st.header("Cadastrar / Anexar Fotos")
-    tipo_op = st.radio("Selecione:", ["➕ Cadastrar Novo Indivíduo", "🖼️ Anexar Foto Existente"])
+    tipo_op = st.radio("Selecione:", ["➕ Cadastrar Novo Indivíduo", "🖼️ Anexar Foto Existente"], key="tipo_op_cadastro")
     if tipo_op == "➕ Cadastrar Novo Indivíduo":
-        with st.form("form_cad"):
+        with st.form("form_cad", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
                 nome = st.text_input("Nome Completo*")
-                data_nasc = st.text_input("Data de Nascimento (Ex: 01/01/2004)")
+                data_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)")
                 cpf = st.text_input("CPF")
                 zona_s = st.selectbox("Zona*", ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"])
             with c2:
@@ -584,7 +594,7 @@ with aba_kml:
     st.header("🗺️ Conversor de Telemetria e Rastreamento para KML")
     st.caption("Extraia pontos geográficos de relatórios (PDF, DOCX, CSV, TXT) e gere arquivos otimizados para o Google Earth.")
     
-    arquivo_upload = st.file_uploader("Selecione o arquivo de telemetria", type=["pdf", "docx", "txt", "csv", "doc"])
+    arquivo_upload = st.file_uploader("Selecione o arquivo de telemetria", type=["pdf", "docx", "txt", "csv", "doc"], key="kml_file_upload")
     
     if arquivo_upload is not None:
         texto_extraido = extrair_texto_stream(arquivo_upload)
@@ -609,11 +619,11 @@ with aba_kml:
                 c_f1, c_f2 = st.columns(2)
                 
                 with c_f1:
-                    data_i = st.date_input("Data Inicial", value=dt_inicio)
-                    hora_i = st.time_input("Hora Inicial", value=hr_inicio)
+                    data_i = st.date_input("Data Inicial", value=dt_inicio, key="kml_dt_i")
+                    hora_i = st.time_input("Hora Inicial", value=hr_inicio, key="kml_hr_i")
                 with c_f2:
-                    data_f = st.date_input("Data Final", value=dt_fim)
-                    hora_f = st.time_input("Hora Final", value=hr_fim)
+                    data_f = st.date_input("Data Final", value=dt_fim, key="kml_dt_f")
+                    hora_f = st.time_input("Hora Final", value=hr_fim, key="kml_hr_f")
                 
                 iso_filtro_ini = f"{data_i.strftime('%Y-%m-%d')}T{hora_i.strftime('%H:%M:%S')}"
                 iso_filtro_fim = f"{data_f.strftime('%Y-%m-%d')}T{hora_f.strftime('%H:%M:%S')}"
@@ -703,7 +713,7 @@ with aba_ai:
                             st.error("⚠️ Todos os modelos do Gemini estão temporariamente sobrecarregados. Tente novamente em alguns segundos.")
                         
                 except Exception as e:
-                    st.error(f"Erro ao processar com a API do Gemini: {e}")
+                    st.error(f"Erro ao processar com a API du Gemini: {e}")
 
 # =========================================================
 # ABA: GALERIA DE TATUAGENS E MARCAS (DIRETA PARA O INDIVÍDUO)
@@ -715,7 +725,6 @@ with aba_tatuagens:
     if df_registros.empty:
         st.info("Nenhum registro cadastrado no banco de dados.")
     else:
-        # Coleta todas as tatuagens cadastradas no banco
         tattoos_global = []
         for _, row in df_registros.iterrows():
             tattoos_lista = extrair_lista_fotos(row.get("tatuagem_url"))
@@ -737,7 +746,6 @@ with aba_tatuagens:
             st.success(f"🔍 **{len(tattoos_global)}** imagem(ns) de tatuagem encontrada(s) no banco de dados.")
             st.divider()
             
-            # Exibe em grade estilo galeria
             cols = st.columns(3)
             for idx, item in enumerate(tattoos_global):
                 with cols[idx % 3]:
