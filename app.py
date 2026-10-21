@@ -240,17 +240,22 @@ def carregar_dados():
             df = pd.DataFrame(dados)
             if "zona" not in df.columns:
                 df["zona"] = "Não Informado"
+            if "data_nascimento" not in df.columns:
+                df["data_nascimento"] = ""
+            if "nome_mae" not in df.columns:
+                df["nome_mae"] = ""
             return df
     except Exception as e:
         st.error(f"Erro de conexão com o Supabase: {e}")
-    return pd.DataFrame(columns=["id", "nome", "idade", "cpf", "enderecos", "crimes", "bos_ips", "foto_url", "zona"])
+    return pd.DataFrame(columns=["id", "nome", "idade", "cpf", "data_nascimento", "nome_mae", "enderecos", "crimes", "bos_ips", "foto_url", "zona"])
 
 df_registros = carregar_dados()
 
 st.title("📁 Sistema de Registros e Rastreamento Regional")
 st.caption("☁️ Banco na nuvem (Supabase) | 🗺️ Divisão Regional e Telemetria")
 
-aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml, aba_ai = st.tabs([
+# Aba de Tatuagens colocada discretamente no final (fora do primeiro plano)
+aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml, aba_ai, aba_tatuagens = st.tabs([
     "🌐 Todos os Registros",
     "🔴 Zona Norte (ZN)",
     "🟢 Zona Sul",
@@ -260,7 +265,8 @@ aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_c
     "✏️ Editar Registros",
     "➕ Cadastrar / Anexar Foto",
     "🗺️ Conversor Rastreamento (KML)",
-    "🤖 Análise Investigativa (Gemini)"
+    "🤖 Análise Investigativa (Gemini)",
+    "🎨 Tatuagens e Marcas"
 ])
 
 def exibir_cards(df_sub, chave_aba):
@@ -298,8 +304,10 @@ def exibir_cards(df_sub, chave_aba):
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown(f"**Idade:** {row.get('idade', 'N/A')}")
+                st.markdown(f"**Data Nasc.:** {row.get('data_nascimento', 'N/A')}")
                 st.markdown(f"**CPF:** {row.get('cpf', 'N/A')}")
             with c2:
+                st.markdown(f"**Nome da Mãe:** {row.get('nome_mae', 'N/A')}")
                 st.markdown(f"**BOs / IPs:** {row.get('bos_ips', 'N/A')}")
                 st.markdown(f"**Zona:** `{row.get('zona', 'Não Informado')}`")
             with c3: pass
@@ -340,7 +348,8 @@ with aba_galeria:
             id_sel = int(selecionado.split("(ID: ")[1].replace(")", ""))
             reg = df_registros[df_registros["id"] == id_sel].iloc[0]
             st.subheader(f"📌 {reg['nome']}")
-            st.markdown(f"**CPF:** {reg.get('cpf', 'N/A')} | **Idade:** {reg.get('idade', 'N/A')} | **Zona:** `{reg.get('zona', 'N/A')}`")
+            st.markdown(f"**CPF:** {reg.get('cpf', 'N/A')} | **Nascimento:** {reg.get('data_nascimento', 'N/A')} | **Mãe:** {reg.get('nome_mae', 'N/A')}")
+            st.markdown(f"**Zona:** `{reg.get('zona', 'N/A')}`")
             fotos = extrair_lista_fotos(reg.get("foto_url"))
             if fotos:
                 st.markdown("---")
@@ -372,13 +381,15 @@ with aba_editar:
                 with c1:
                     novo_nome = st.text_input("Nome Completo", value=str(reg_edit.get("nome", "")))
                     nova_idade = st.text_input("Idade", value=str(reg_edit.get("idade", "")))
+                    nova_nasc = st.text_input("Data de Nascimento", value=str(reg_edit.get("data_nascimento", "")))
                     novo_cpf = st.text_input("CPF", value=str(reg_edit.get("cpf", "")))
                 with c2:
+                    novo_mae = st.text_input("Nome da Mãe", value=str(reg_edit.get("nome_mae", "")))
                     nova_zona = st.selectbox("Zona / Região", lista_zonas, index=idx_z)
                     novos_bos_ips = st.text_input("BO's / IP's", value=str(reg_edit.get("bos_ips", "")))
-                    novos_enderecos = st.text_area("Endereços", value=str(reg_edit.get("enderecos", "")), height=100)
+                    novos_enderecos = st.text_area("Endereços", value=str(reg_edit.get("enderecos", "")), height=80)
                 
-                novos_crimes = st.text_area("Crimes", value=str(reg_edit.get("crimes", "")), height=100)
+                novos_crimes = st.text_area("Crimes / Tatuagens / Marcas", value=str(reg_edit.get("crimes", "")), height=100)
                 
                 fotos_atuais = extrair_lista_fotos(reg_edit.get("foto_url"))
                 fotos_a_excluir = []
@@ -409,6 +420,7 @@ with aba_editar:
                     
                     supabase.table("pessoas").update({
                         "nome": novo_nome, "idade": nova_idade, "cpf": novo_cpf,
+                        "data_nascimento": nova_nasc, "nome_mae": novo_mae,
                         "zona": nova_zona, "enderecos": novos_enderecos,
                         "crimes": novos_crimes, "bos_ips": novos_bos_ips,
                         "foto_url": json.dumps(fotos_finais)
@@ -425,12 +437,14 @@ with aba_cadastro:
             with c1:
                 nome = st.text_input("Nome Completo*")
                 idade = st.text_input("Idade")
+                data_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)")
                 cpf = st.text_input("CPF")
                 zona_s = st.selectbox("Zona*", ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"])
             with c2:
+                nome_mae = st.text_input("Nome da Mãe")
                 bos_ips = st.text_input("BO's / IP's")
-                enderecos = st.text_area("Endereços", height=100)
-            crimes = st.text_area("Crimes*", height=100)
+                enderecos = st.text_area("Endereços", height=80)
+            crimes = st.text_area("Crimes / Tatuagens / Marcas*", height=100)
             foto_file = st.file_uploader("Foto Inicial", type=["jpg", "jpeg", "png"])
             
             if st.form_submit_button("☁️ Salvar"):
@@ -446,6 +460,7 @@ with aba_cadastro:
                     
                     supabase.table("pessoas").insert({
                         "id": id_unico, "nome": nome, "idade": idade, "cpf": cpf_limpo,
+                        "data_nascimento": data_nasc, "nome_mae": nome_mae,
                         "zona": zona_s, "enderecos": enderecos, "crimes": crimes,
                         "bos_ips": bos_ips, "foto_url": json.dumps([url_f] if url_f else [])
                     }).execute()
@@ -517,7 +532,7 @@ with aba_kml:
                 hr_inicio = datetime.strptime(validos[0]["hora"], "%H:%M:%S").time()
                 hr_fim = datetime.strptime(validos[-1]["hora"], "%H:%M:%S").time()
                 
-                st.subheader("⚙️ Filtro de Periodo")
+                st.subheader("⚙️ Filtro de Período")
                 c_f1, c_f2 = st.columns(2)
                 
                 with c_f1:
@@ -579,13 +594,13 @@ with aba_ai:
                     
                     resumo_banco = []
                     for _, r in df_registros.iterrows():
-                        resumo_banco.append(f"- Nome: {r.get('nome')}, CPF: {r.get('cpf')}, Zona: {r.get('zona')}, Crimes: {r.get('crimes')}, BOs/IPs: {r.get('bos_ips')}")
+                        resumo_banco.append(f"- Nome: {r.get('nome')}, CPF: {r.get('cpf')}, Mãe: {r.get('nome_mae')}, Zona: {r.get('zona')}, Crimes/Tatuagens: {r.get('crimes')}")
                     
                     contexto_banco_str = "\n".join(resumo_banco) if resumo_banco else "Nenhum registro no banco."
                     
                     prompt_padrao = f"""
                     Você é um analista de inteligência e investigação policial sênior. 
-                    Analise a fotografia anexada, descreva características marcantes (físicas, vestimentas, tatuagens, acessórios) e realize um cruzamento analítico com os perfis de indivíduos cadastrados no banco de dados da instituição abaixo para identificar possíveis correspondências, semelhanças ou conexões investigativas.
+                    Analise a fotografia anexada, descreva características marcantes (físicas, vestimentas, tatuagens, marcas distintas, acessórios) e realize um cruzamento analítico com os perfis de indivíduos cadastrados no banco de dados da instituição abaixo para identificar possíveis correspondências, semelhanças ou conexões investigativas.
                     
                     Registros atuais cadastrados no banco de dados:
                     {contexto_banco_str}
@@ -593,7 +608,7 @@ with aba_ai:
                     Forneça um relatório investigativo detalhado, estruturado e objetivo.
                     """
                     
-                    with st.spinner("Analisando imagem com o Gemini (com fallback automático de modelos)..."):
+                    with st.spinner("Analisando imagem com o Gemini..."):
                         response = None
                         modelos_para_tentar = ['gemini-3.8-flash', 'gemini-1.5-flash', 'gemini-2.5-pro']
                         
@@ -616,3 +631,51 @@ with aba_ai:
                         
                 except Exception as e:
                     st.error(f"Erro ao processar com a API do Gemini: {e}")
+
+# =========================================================
+# ABA: TATUAGENS E MARCAS (DISCRETA NO FINAL)
+# =========================================================
+with aba_tatuagens:
+    st.header("🎨 Consulta de Tatuagens e Marcas Distintas")
+    st.caption("Filtro automático de indivíduos que possuem menção a tatuagens, cicatrizes ou marcas em seus registros.")
+    
+    if df_registros.empty:
+        st.info("Nenhum registro cadastrado no banco de dados.")
+    else:
+        # Filtra registros que possuem palavras-chave de tatuagens/marcas nos crimes ou endereços
+        termos_busca_tattoo = ["tatuagem", "tattoo", "tatoo", "marca", "cicatriz", "desenho", "símbolo"]
+        
+        def tem_tattoo(row):
+            texto_geral = f"{str(row.get('crimes', ''))} {str(row.get('enderecos', ''))} {str(row.get('bos_ips', ''))}".lower()
+            return any(termo in texto_geral for termo in termos_busca_tattoo)
+            
+        df_tattoos = df_registros[df_registros.apply(tem_tattoo, axis=1)]
+        
+        if df_tattoos.empty:
+            st.warning("⚠️ Nenhum indivíduo com menção explícita a tatuagens ou marcas foi encontrado no banco de dados.")
+        else:
+            st.success(f"🔍 **{len(df_tattoos)}** indivíduo(s) com registros de tatuagens ou marcas encontrados.")
+            st.divider()
+            
+            for index, row in df_tattoos.reset_index(drop=True).iterrows():
+                col_img, col_dados = st.columns([1, 3])
+                fotos = extrair_lista_fotos(row.get("foto_url"))
+                
+                with col_img:
+                    if fotos:
+                        st.image(fotos[0], width=160, caption=f"Foto Principal ({len(fotos)} foto(s))")
+                    else:
+                        st.image("https://via.placeholder.com/160?text=Sem+Foto", width=160)
+                
+                with col_dados:
+                    st.subheader(f"{row['nome']}")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown(f"**Data Nasc.:** {row.get('data_nascimento', 'N/A')}")
+                        st.markdown(f"**CPF:** {row.get('cpf', 'N/A')}")
+                    with c2:
+                        st.markdown(f"**Nome da Mãe:** {row.get('nome_mae', 'N/A')}")
+                        st.markdown(f"**Zona:** `{row.get('zona', 'Não Informado')}`")
+                        
+                    st.markdown(f"**Detalhes / Marcas / Crimes:**\n{row.get('crimes', 'N/A')}")
+                st.divider()
