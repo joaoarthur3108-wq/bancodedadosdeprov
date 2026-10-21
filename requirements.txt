@@ -4,3 +4,6 @@ supabase
 opencv-python
 pypdf
 python-docx
+opencv-python-headless
+face_recognition
+numpy
