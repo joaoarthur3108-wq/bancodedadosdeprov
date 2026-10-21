@@ -250,7 +250,7 @@ df_registros = carregar_dados()
 st.title("📁 Sistema de Registros e Rastreamento Regional")
 st.caption("☁️ Banco na nuvem (Supabase) | 🗺️ Divisão Regional e Telemetria")
 
-aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml, aba_reconhecer = st.tabs([
+aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml = st.tabs([
     "🌐 Todos os Registros",
     "🔴 Zona Norte (ZN)",
     "🟢 Zona Sul",
@@ -259,8 +259,7 @@ aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_c
     "👥 Galeria do Indivíduo",
     "✏️ Editar Registros",
     "➕ Cadastrar / Anexar Foto",
-    "🗺️ Conversor Rastreamento (KML)",
-    "🔍 Reconhecimento Facial"
+    "🗺️ Conversor Rastreamento (KML)"
 ])
 
 def exibir_cards(df_sub, chave_aba):
@@ -551,77 +550,3 @@ with aba_kml:
                     file_name=nome_kml_saida,
                     mime="application/vnd.google-earth.kml+xml"
                 )
-
-# =========================================================
-# ABA: RECONHECIMENTO FACIAL POR UPLOAD DE FOTO
-# =========================================================
-with aba_reconhecer:
-    st.header("🔍 Reconhecimento Facial por Foto")
-    st.caption("Faça o upload de uma fotografia para cruzamento automático com o banco de dados de indivíduos.")
-    
-    foto_consulta = st.file_uploader("Selecione a foto para análise", type=["jpg", "jpeg", "png"], key="upload_reconhecimento")
-    
-    if foto_consulta is not None:
-        st.image(foto_consulta, width=300, caption="Foto Enviada para Consulta")
-        
-        if st.button("🚀 Executar Reconhecimento Facial", type="primary"):
-            try:
-                import face_recognition
-                import numpy as np
-                import urllib.request
-                import cv2
-
-                imagem_usuario = face_recognition.load_image_file(foto_consulta)
-                codificacoes_usuario = face_recognition.face_encodings(imagem_usuario)
-
-                if not codificacoes_usuario:
-                    st.error("⚠️ Nenhum rosto foi detectado na foto enviada. Tente outra imagem com melhor iluminação e enquadramento.")
-                else:
-                    rosto_usuario_enc = codificacoes_usuario[0]
-                    encontrou_match = False
-                    
-                    with st.spinner("Analisando e cruzando com o banco de dados do Supabase..."):
-                        for _, row in df_registros.iterrows():
-                            fotos_indiv = extrair_lista_fotos(row.get("foto_url"))
-                            if not fotos_indiv:
-                                continue
-                            
-                            for url_foto in fotos_indiv:
-                                try:
-                                    req = urllib.request.urlopen(url_foto)
-                                    arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-                                    img_banco = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                                    
-                                    if img_banco is None:
-                                        continue
-                                        
-                                    rgb_banco = cv2.cvtColor(img_banco, cv2.COLOR_BGR2RGB)
-                                    cods_banco = face_recognition.face_encodings(rgb_banco)
-                                    
-                                    if cods_banco:
-                                        resultado = face_recognition.compare_faces([cods_banco[0]], rosto_usuario_enc, tolerance=0.6)
-                                        
-                                        if resultado[0]:
-                                            encontrou_match = True
-                                            st.success(f"🎯 **MATCH ENCONTRADO!** Indivíduo identificado no sistema.")
-                                            
-                                            col_i1, col_i2 = st.columns([1, 2])
-                                            with col_i1:
-                                                st.image(url_foto, width=200, caption="Foto de Referência (Banco)")
-                                            with col_i2:
-                                                st.subheader(f"📌 {row['nome']}")
-                                                st.markdown(f"**CPF:** {row.get('cpf', 'N/A')} | **Idade:** {row.get('idade', 'N/A')}")
-                                                st.markdown(f"**Zona:** `{row.get('zona', 'Não Informado')}`")
-                                                st.markdown(f"**Endereços:** {row.get('enderecos', 'N/A')}")
-                                                st.markdown(f"**Crimes Associados:**\n{row.get('crimes', 'N/A')}")
-                                            break
-                                except Exception as ex:
-                                    continue
-                            if encontrou_match:
-                                break
-                                
-                    if not encontrou_match:
-                        st.warning("⚠️ Nenhum rosto compatível foi encontrado entre os indivíduos cadastrados no banco de dados.")
-            
-            except ImportError:
-                st.error("⚠️ A biblioteca `face_recognition` ou dependências (`cmake`, `dlib`) não estão instaladas corretamente no ambiente do Streamlit Cloud.")
