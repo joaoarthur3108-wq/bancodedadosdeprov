@@ -517,7 +517,7 @@ with aba_kml:
                 hr_inicio = datetime.strptime(validos[0]["hora"], "%H:%M:%S").time()
                 hr_fim = datetime.strptime(validos[-1]["hora"], "%H:%M:%S").time()
                 
-                st.subheader("⚙️ Filtro de Período")
+                st.subheader("⚙️ Filtro de Periodo")
                 c_f1, c_f2 = st.columns(2)
                 
                 with c_f1:
@@ -593,15 +593,26 @@ with aba_ai:
                     Forneça um relatório investigativo detalhado, estruturado e objetivo.
                     """
                     
-                    with st.spinner("Analisando imagem com o Gemini..."):
-                        response = client.models.generate_content(
-                            model='gemini-3.8-flash',
-                            contents=[imagem_pil, prompt_padrao]
-                        )
+                    with st.spinner("Analisando imagem com o Gemini (com fallback automático de modelos)..."):
+                        response = None
+                        modelos_para_tentar = ['gemini-3.8-flash', 'gemini-1.5-flash', 'gemini-2.5-pro']
                         
-                        st.markdown("---")
-                        st.markdown("### 📋 Relatório de Análise da IA")
-                        st.write(response.text)
+                        for mod in modelos_para_tentar:
+                            try:
+                                response = client.models.generate_content(
+                                    model=mod,
+                                    contents=[imagem_pil, prompt_padrao]
+                                )
+                                break
+                            except Exception:
+                                continue
+                                
+                        if response:
+                            st.markdown("---")
+                            st.markdown("### 📋 Relatório de Análise da IA")
+                            st.write(response.text)
+                        else:
+                            st.error("⚠️ Todos os modelos do Gemini estão temporariamente sobrecarregados. Tente novamente em alguns segundos.")
                         
                 except Exception as e:
                     st.error(f"Erro ao processar com a API do Gemini: {e}")
