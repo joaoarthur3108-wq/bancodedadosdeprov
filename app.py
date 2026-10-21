@@ -480,7 +480,7 @@ with aba_cadastro:
             with c1:
                 nome = st.text_input("Nome Completo*")
                 idade = st.text_input("Idade")
-                data_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)")
+                data_nasc = st.text_input("Data de Nascimento (Ex: 01/03/2000)")
                 cpf = st.text_input("CPF")
                 zona_s = st.selectbox("Zona*", ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"])
             with c2:
