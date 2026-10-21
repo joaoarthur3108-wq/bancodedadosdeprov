@@ -417,7 +417,7 @@ with aba_editar:
                 
                 with c1:
                     novo_nome = st.text_input("Nome Completo", value=str(reg_edit.get("nome", "")))
-                    nova_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)", value=str(reg_edit.get("data_nascimento", "")))
+                    nova_nasc = st.text_input("Data de Nascimento (Ex: 15/05/1990)", value=str(reg_edit.get("data_nascimento", "")))
                     novo_cpf = st.text_input("CPF", value=str(reg_edit.get("cpf", "")))
                 with c2:
                     novo_mae = st.text_input("Nome da Mãe", value=str(reg_edit.get("nome_mae", "")))
@@ -501,7 +501,7 @@ with aba_cadastro:
             c1, c2 = st.columns(2)
             with c1:
                 nome = st.text_input("Nome Completo*")
-                data_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)")
+                data_nasc = st.text_input("Data de Nascimento (Ex: 15/05/1990)")
                 cpf = st.text_input("CPF")
                 zona_s = st.selectbox("Zona*", ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"])
             with c2:
@@ -713,7 +713,7 @@ with aba_ai:
                             st.error("⚠️ Todos os modelos do Gemini estão temporariamente sobrecarregados. Tente novamente em alguns segundos.")
                         
                 except Exception as e:
-                    st.error(f"Erro ao processar com a API du Gemini: {e}")
+                    st.error(f"Erro ao processar com a API do Gemini: {e}")
 
 # =========================================================
 # ABA: GALERIA DE TATUAGENS E MARCAS (DIRETA PARA O INDIVÍDUO)
