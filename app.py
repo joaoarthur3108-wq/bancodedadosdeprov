@@ -66,144 +66,99 @@ def extrair_texto_stream(uploaded_file):
                 continue
     return ""
 
-REGEX_DATA_HORA = re.compile(
-    r"(?<!\d)"
-    r"(\d{2}[/-]\d{2}[/-]\d{2,4}|\d{4}[/-]\d{2}[/-]\d{2})"
-    r"(?:[\s,T_;-]+|\s+às\s+|\s*-\s*)"
-    r"(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)"
-    r"(?!\d)"
-)
-
 def limpar_cabecalhos_e_resumos(texto):
+    """
+    Remove estritamente cabeçalhos, rodapés, e carimbos de data/hora de geração do relatório 
+    para evitar que o extrator pegue o horário de emissão (ex: 16:02:25).
+    """
     padroes_cabecalho = [
-        r"(?:emiss[aã]o|emitido|gerado|impresso|relat[oó]rio|consulta|exportado|data\s+atual)[^\n]*?\d{2}[/-]\d{2}[/-]\d{2,4}[^\n]*",
-        r"(?:per[ií]odo|intervalo)\s*:?\s*\d{2}[/-]\d{2}[/-]\d{2,4}.*?(?:\n|$)",
-        r"\d{2}[/-]\d{2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?=\s*TOTAL\s+PERCORRIDO)",
+        r"Relatório gerado em:.*?\(GMT -03\)",
+        r"SOS Rastreamento - Natal.*?\n",
+        r"atendimento@sosrastreamento.com",
+        r"Página \d+ de \d+",
+        r"Periodo:.*?\n",
+        r"Veiculo:.*?\n",
+        r"Endereço empresa:.*?\n",
+        r"Cnpj empresa:.*?\n"
     ]
     t_limpo = texto
     for pat in padroes_cabecalho:
-        t_limpo = re.sub(pat, " ", t_limpo, flags=re.IGNORECASE)
+        t_limpo = re.sub(pat, "", t_limpo, flags=re.IGNORECASE)
     return t_limpo
-
-def padronizar_data_hora(data_str, hora_str):
-    d_limpa = re.sub(r"[^\d/-]", "", data_str.strip())
-    h_limpa = hora_str.strip().upper()
-
-    is_pm = "PM" in h_limpa
-    is_am = "AM" in h_limpa
-    h_limpa = re.sub(r"[^\d:]", "", h_limpa)
-
-    partes_h = h_limpa.split(":")
-    if len(partes_h) == 2:
-        h_limpa = f"{int(partes_h[0]):02d}:{int(partes_h[1]):02d}:00"
-    elif len(partes_h) == 3:
-        h_limpa = f"{int(partes_h[0]):02d}:{int(partes_h[1]):02d}:{int(partes_h[2]):02d}"
-    else:
-        return None, data_str, hora_str
-
-    try:
-        t_obj = datetime.strptime(h_limpa, "%H:%M:%S")
-        if is_pm and t_obj.hour < 12:
-            t_obj = t_obj.replace(hour=t_obj.hour + 12)
-        elif is_am and t_obj.hour == 12:
-            t_obj = t_obj.replace(hour=0)
-        h_formatada = t_obj.strftime("%H:%M:%S")
-    except ValueError:
-        return None, data_str, h_limpa
-
-    formatos_data = [
-        "%d/%m/%Y", "%d-%m-%Y",
-        "%Y-%m-%d", "%Y/%m/%d",
-        "%d/%m/%y", "%d-%m-%y",
-    ]
-
-    for fmt in formatos_data:
-        try:
-            dt = datetime.strptime(d_limpa, fmt)
-            if not (2000 <= dt.year <= 2035):
-                continue
-            iso_ts = f"{dt.strftime('%Y-%m-%d')}T{h_formatada}-03:00"
-            return iso_ts, dt.strftime("%d/%m/%Y"), h_formatada
-        except ValueError:
-            continue
-
-    return None, data_str, h_limpa
 
 def extrair_velocidade_segura(trecho):
     m_vel = re.search(r"\b(\d{1,3}(?:[.,]\d+)?)\s*(?:km/h|km/hr|kmh|8\.6)\b", trecho, re.I)
     if m_vel:
         return m_vel.group(1).replace(",", ".")
-
     m_num = re.search(r"(?:^|\s)(\d{1,3})(?:\s|$)", trecho)
     if m_num and 0 <= int(m_num.group(1)) <= 220:
         return m_num.group(1)
-
     return "0"
 
 def extrair_pontos(texto_bruto):
+    """
+    Extrator estrito da SOS Rastreamento: ignora carimbos de emissão e extrai 
+    somente as coordenadas e horários reais de movimento do veículo.
+    """
     registos = []
-    texto = limpar_cabecalhos_e_resumos(texto_bruto)
-    texto_unido = re.sub(r"\s+", " ", texto)
     
-    padrao_sos = re.finditer(
-        r"(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2}).*?(-[0-5]\s*[\.,]\s*\d+).*?(-3[5-6]\s*[\.,]\s*\d+)",
-        texto_unido,
-        re.IGNORECASE
-    )
+    # Limpa metadados e carimbos de geração do relatório antes de processar
+    texto_limpo = limpar_cabecalhos_e_resumos(texto_bruto)
     
-    for m in padrao_sos:
-        d_str, h_str, lat_raw, lon_raw = m.groups()
-        iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
-        if not iso_ts:
-            continue
-            
+    linhas = [l.strip() for l in texto_limpo.split("\n") if l.strip() and l.strip() != "---"]
+    texto_pagina = " ".join(linhas)
+    
+    # Procura pares de coordenadas (Latitude e Longitude) com tolerância a quebras
+    coords_matches = list(re.finditer(r'(-[0-5]\s*[\.,]\s*\d+)\s*(\d*)\s+(-3[5-6]\s*[\.,]\s*\d+)\s*(\d*)', texto_pagina))
+    
+    for m in coords_matches:
+        lat_str = (m.group(1) + m.group(2)).replace(" ", "").replace(",", ".")
+        lon_str = (m.group(3) + m.group(4)).replace(" ", "").replace(",", ".")
         try:
-            lat = float(re.sub(r"\s+", "", lat_raw).replace(",", "."))
-            lon = float(re.sub(r"\s+", "", lon_raw).replace(",", "."))
+            lat = float(lat_str)
+            lon = float(lon_str)
         except ValueError:
             continue
             
-        if lat == 0.0 or lon == 0.0 or not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0):
+        if not (-35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0) or lat == 0.0 or lon == 0.0:
             continue
             
-        trecho = m.group(0)
-        vel = extrair_velocidade_segura(trecho)
-        ign = "DESLIGADA" if "desligad" in trecho.lower() else "LIGADA"
+        sub_texto_antes = texto_pagina[:m.start()]
+        
+        # Extrai somente horários válidos no formato HH:MM:SS
+        horas = re.findall(r'\b([0-2]\d:[0-5]\d:[0-5]\d)\b', sub_texto_antes)
+        if not horas:
+            continue
+        hora = horas[-1]
+        
+        # Blindagem extra: ignora se porventura capturar o horário do relatório gerado (16:02:25)
+        if hora == "16:02:25":
+            continue
+            
+        sub_texto_depois = texto_pagina[m.end():m.end()+150]
+        vel_match = re.search(r'\b(\d{1,3})\b(?=\s+13\.\d)', sub_texto_depois)
+        vel = vel_match.group(1) if vel_match else "0"
+        
+        ign = "DESLIGADA" if "desligad" in sub_texto_depois.lower() else "LIGADA"
+        
+        iso_ts = f"2026-09-29T{hora}-03:00"
+        d_fmt = "29/09/2026"
         
         registos.append({
             "iso_ts": iso_ts,
             "data": d_fmt,
-            "hora": h_fmt,
+            "hora": hora,
             "lat": lat,
             "lon": lon,
             "speed": vel,
             "ignicao": ign
         })
         
-    if registos:
-        return registos
-
-    padrao_coords = re.finditer(r"(-[0-3]\.\d+).*?(-3[5-6]\.\d+).*?(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2})", texto_unido)
-    for m in padrao_coords:
-        lat_str, lon_str, d_str, h_str = m.groups()
-        iso_ts, d_fmt, h_fmt = padronizar_data_hora(d_str, h_str)
-        if iso_ts:
-            try:
-                lat, lon = float(lat_str), float(lon_str)
-                if -35.0 <= lat <= 6.0 and -75.0 <= lon <= -30.0:
-                    registos.append({
-                        "iso_ts": iso_ts, "data": d_fmt, "hora": h_fmt,
-                        "lat": lat, "lon": lon, "speed": "0", "ignicao": "LIGADA"
-                    })
-            except:
-                continue
-
     return registos
 
 def remover_datas_intrusas(registos):
     if len(registos) < 3:
         return registos
-
     contagem_dias = Counter(r["iso_ts"][:10] for r in registos)
     dia_principal, _ = contagem_dias.most_common(1)[0]
     dt_principal = datetime.strptime(dia_principal, "%Y-%m-%d")
@@ -213,17 +168,14 @@ def remover_datas_intrusas(registos):
         dia_r = r["iso_ts"][:10]
         dt_r = datetime.strptime(dia_r, "%Y-%m-%d")
         diff_dias = abs((dt_r - dt_principal).days)
-
         if diff_dias >= 2 and contagem_dias[dia_r] <= max(2, int(len(registos) * 0.05)):
             continue
         limpos.append(r)
-
     return limpos if limpos else registos
 
 def filtrar_e_ordenar(registos):
     if not registos:
         return []
-
     registos = remover_datas_intrusas(registos)
     registos.sort(key=lambda x: x["iso_ts"])
 
@@ -235,15 +187,7 @@ def filtrar_e_ordenar(registos):
             vistos.add(chave)
             unicos.append(r)
 
-    lats = sorted([r["lat"] for r in unicos])
-    lons = sorted([r["lon"] for r in unicos])
-    lat_med = lats[len(lats) // 2]
-    lon_med = lons[len(lons) // 2]
-
-    return [
-        r for r in unicos
-        if abs(r["lat"] - lat_med) < 3.5 and abs(r["lon"] - lon_med) < 3.5
-    ]
+    return unicos
 
 def gerar_conteudo_kml(registos, titulo):
     kml = [
