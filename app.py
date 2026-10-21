@@ -557,16 +557,14 @@ with aba_kml:
 # =========================================================
 with aba_ai:
     st.header("🤖 Análise Investigativa com Inteligência Artificial (Gemini)")
-    st.caption("Envie uma fotografia para análise de características e cruzamento inteligente com os registros do banco de dados.")
+    st.caption("Envie uma fotografia para análise detalhada e cruzamento automático com os registros do banco de dados.")
     
     foto_ai = st.file_uploader("Selecione a foto para análise investigativa", type=["jpg", "jpeg", "png"], key="upload_gemini")
     
     if foto_ai is not None:
         st.image(foto_ai, width=300, caption="Foto para Análise")
         
-        pergunta_investigativa = st.text_input("Instrução ou pergunta para a IA:", value="Analise esta imagem, descreva características marcantes (físicas, vestimentas, acessórios) e verifique se há compatibilidade com os crimes ou perfis cadastrados no sistema.")
-        
-        if st.button("🚀 Executar Análise com Gemini", type="primary"):
+        if st.button("🚀 Executar Análise Automática com Gemini", type="primary"):
             api_key_gemini = st.secrets.get("GEMINI_API_KEY", "")
             if not api_key_gemini:
                 st.error("⚠️ A chave `GEMINI_API_KEY` não foi configurada nas Secrets do Streamlit Cloud.")
@@ -577,30 +575,28 @@ with aba_ai:
                     
                     client = genai.Client(api_key=api_key_gemini)
                     
-                    # Prepara a imagem para o Gemini
                     imagem_pil = Image.open(foto_ai)
                     
-                    # Monta o contexto resumido do banco de dados para a IA cruzar as informações
                     resumo_banco = []
                     for _, r in df_registros.iterrows():
                         resumo_banco.append(f"- Nome: {r.get('nome')}, CPF: {r.get('cpf')}, Zona: {r.get('zona')}, Crimes: {r.get('crimes')}, BOs/IPs: {r.get('bos_ips')}")
                     
                     contexto_banco_str = "\n".join(resumo_banco) if resumo_banco else "Nenhum registro no banco."
                     
-                    prompt_completo = f"""
+                    prompt_padrao = f"""
                     Você é um analista de inteligência e investigação policial sênior. 
-                    Analise a fotografia anexada e responda à seguinte instrução: {pergunta_investigativa}
+                    Analise a fotografia anexada, descreva características marcantes (físicas, vestimentas, tatuagens, acessórios) e realize um cruzamento analítico com os perfis de indivíduos cadastrados no banco de dados da instituição abaixo para identificar possíveis correspondências, semelhanças ou conexões investigativas.
                     
-                    Abaixo estão os registros atuais cadastrados no banco de dados da instituição para cruzamento:
+                    Registros atuais cadastrados no banco de dados:
                     {contexto_banco_str}
                     
-                    Forneça um relatório investigativo claro, destacando possíveis correspondências, semelhanças ou análises comportamentais/físicas úteis para a investigação.
+                    Forneça um relatório investigativo detalhado, estruturado e objetivo.
                     """
                     
                     with st.spinner("Analisando imagem com o Gemini..."):
                         response = client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=[imagem_pil, prompt_completo]
+                            model='gemini-3.8-flash',
+                            contents=[imagem_pil, prompt_padrao]
                         )
                         
                         st.markdown("---")
