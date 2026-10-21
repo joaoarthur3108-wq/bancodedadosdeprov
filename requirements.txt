@@ -5,3 +5,4 @@ pypdf
 python-docx
 opencv-python-headless
 numpy
+google-genai
