@@ -273,6 +273,10 @@ df_registros = carregar_dados()
 st.title("📁 Sistema de Registros e Rastreamento Regional")
 st.caption("☁️ Banco na nuvem (Supabase) | 🗺️ Divisão Regional e Telemetria")
 
+# Gerenciamento de navegação via session_state para redirecionar à galeria
+if "aba_ativa" not in st.session_state:
+    st.session_state.aba_ativa = 0
+
 aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml, aba_ai, aba_tatuagens = st.tabs([
     "🌐 Todos os Registros",
     "🔴 Zona Norte (ZN)",
@@ -333,10 +337,16 @@ def exibir_cards(df_sub, chave_aba):
             st.markdown(f"**Endereço(s):** {row.get('enderecos', 'N/A')}")
             st.markdown(f"**Crimes Associados:**\n{row.get('crimes', 'N/A')}")
             
-            if st.button("🗑️ Excluir Registro", key=f"del_{chave_aba}_{row['id']}"):
-                supabase.table("pessoas").delete().eq("id", row["id"]).execute()
-                st.success("Registro removido!")
-                st.rerun()
+            b_col1, b_col2 = st.columns(2)
+            with b_col1:
+                if st.button("🔎 Acessar Perfil e Galeria", key=f"gal_{chave_aba}_{row['id']}"):
+                    st.session_state.indiv_selecionado_id = row["id"]
+                    st.rerun()
+            with b_col2:
+                if st.button("🗑️ Excluir Registro", key=f"del_{chave_aba}_{row['id']}"):
+                    supabase.table("pessoas").delete().eq("id", row["id"]).execute()
+                    st.success("Registro removido!")
+                    st.rerun()
         st.divider()
 
 with aba_todos: exibir_cards(df_registros, "todos")
@@ -361,7 +371,16 @@ with aba_galeria:
     st.caption("Visualização detalhada em alta resolução das fotografias e registros de tatuagens.")
     if not df_registros.empty:
         opcoes_pessoas = [f"{row['nome']} | CPF: {row.get('cpf', 'N/A')} (ID: {row['id']})" for _, row in df_registros.iterrows()]
-        selecionado = st.selectbox("Selecione o indivíduo:", opcoes_pessoas, key="galeria_select")
+        
+        # Define índice padrão se houver clique prévio em algum card
+        default_idx = 0
+        if "indiv_selecionado_id" in st.session_state:
+            for idx, op in enumerate(opcoes_pessoas):
+                if f"(ID: {st.session_state.indiv_selecionado_id})" in op:
+                    default_idx = idx
+                    break
+        
+        selecionado = st.selectbox("Selecione o indivíduo:", opcoes_pessoas, index=default_idx, key="galeria_select")
         if selecionado:
             id_sel = int(selecionado.split("(ID: ")[1].replace(")", ""))
             reg = df_registros[df_registros["id"] == id_sel].iloc[0]
@@ -720,7 +739,7 @@ with aba_ai:
 # =========================================================
 with aba_tatuagens:
     st.header("🎨 Galeria Geral de Tatuagens e Marcas Distintas")
-    st.caption("Exibição visual de todas as tatuagens cadastradas no sistema. Ao selecionar ou visualizar uma tatuagem, você identifica o indivíduo associado.")
+    st.caption("Exibição visual de todas as tatuagens cadastradas no sistema. Ao clicar em uma tatuagem, você é direcionado para a ficha do indivíduo correspondente.")
     
     if df_registros.empty:
         st.info("Nenhum registro cadastrado no banco de dados.")
@@ -731,6 +750,7 @@ with aba_tatuagens:
             for t_url in tattoos_lista:
                 tattoos_global.append({
                     "tattoo_url": t_url,
+                    "id": row["id"],
                     "nome": row["nome"],
                     "cpf": row.get("cpf", "N/A"),
                     "nascimento": row.get("data_nascimento", "N/A"),
@@ -752,12 +772,7 @@ with aba_tatuagens:
                     st.image(item["tattoo_url"], use_column_width=True, caption=f"Tatuagem de {item['nome']}")
                     st.markdown(f"[🔗 Abrir imagem em tamanho real]({item['tattoo_url']})", unsafe_allow_html=True)
                     
-                    with st.expander(f"👤 Ver Indivíduo: {item['nome']}"):
-                        if item["foto_perfil"]:
-                            st.image(item["foto_perfil"][0], width=120, caption="Perfil")
-                        st.markdown(f"**Nome:** {item['nome']}")
-                        st.markdown(f"**Data Nasc.:** {item['nascimento']} | **CPF:** {item['cpf']}")
-                        st.markdown(f"**Mãe:** {item['mae']}")
-                        st.markdown(f"**Zona:** `{item['zona']}`")
-                        st.markdown(f"**Detalhes:** {item['crimes']}")
+                    if st.button(f"👤 Ver Perfil de {item['nome']}", key=f"btn_tattoo_ind_{idx}"):
+                        st.session_state.indiv_selecionado_id = item["id"]
+                        st.rerun()
                     st.divider()
