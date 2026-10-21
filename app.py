@@ -24,6 +24,23 @@ def init_supabase():
 supabase: Client = init_supabase()
 
 # =========================================================
+# FUNÇÕES DE APOIO E CÁLCULO DE IDADE
+# =========================================================
+
+def calcular_idade(data_nasc_str):
+    if not data_nasc_str:
+        return ""
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%y"):
+        try:
+            d_nasc = datetime.strptime(data_nasc_str.strip(), fmt)
+            hoje = datetime.now()
+            idade = hoje.year - d_nasc.year - ((hoje.month, hoje.day) < (d_nasc.month, d_nasc.day))
+            return str(idade)
+        except ValueError:
+            continue
+    return ""
+
+# =========================================================
 # FUNÇÕES DE RASTREAMENTO E CONVERSÃO KML (SOS RASTREAMENTO)
 # =========================================================
 
@@ -337,7 +354,7 @@ with aba_oeste:
     exibir_cards(df_registros[df_registros["zona"].astype(str).str.upper().str.contains("OESTE", na=False)], "oeste")
 
 # =========================================================
-# ABA: GALERIA DO INDIVÍDUO (COM FOTOS DE TATUAGENS SECUNDÁRIAS)
+# ABA: GALERIA DO INDIVÍDUO
 # =========================================================
 with aba_galeria:
     st.header("👥 Galeria de Fotos por Indivíduo")
@@ -364,7 +381,6 @@ with aba_galeria:
             else: 
                 st.info("Nenhuma foto principal anexada.")
                 
-            # Seção secundária de Tatuagens e Marcas com Fotos
             st.markdown("---")
             st.markdown("#### 🎨 Tatuagens, Marcas e Sinais Distintos (Secundário)")
             crimes_txt = str(reg.get("crimes", ""))
@@ -383,7 +399,7 @@ with aba_galeria:
                 st.caption("Nenhuma imagem de tatuagem anexada para este indivíduo.")
 
 # =========================================================
-# ABA: EDITAR REGISTROS (COM GESTÃO DE FOTOS E TATUAGENS)
+# ABA: EDITAR REGISTROS
 # =========================================================
 with aba_editar:
     st.header("✏️ Editar Informações do Registro")
@@ -401,8 +417,7 @@ with aba_editar:
                 
                 with c1:
                     novo_nome = st.text_input("Nome Completo", value=str(reg_edit.get("nome", "")))
-                    nova_idade = st.text_input("Idade", value=str(reg_edit.get("idade", "")))
-                    nova_nasc = st.text_input("Data de Nascimento", value=str(reg_edit.get("data_nascimento", "")))
+                    nova_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)", value=str(reg_edit.get("data_nascimento", "")))
                     novo_cpf = st.text_input("CPF", value=str(reg_edit.get("cpf", "")))
                 with c2:
                     novo_mae = st.text_input("Nome da Mãe", value=str(reg_edit.get("nome_mae", "")))
@@ -412,7 +427,6 @@ with aba_editar:
                 
                 novos_crimes = st.text_area("Crimes / Tatuagens / Marcas", value=str(reg_edit.get("crimes", "")), height=100)
                 
-                # Gestão de Fotos Principais
                 fotos_atuais = extrair_lista_fotos(reg_edit.get("foto_url"))
                 fotos_a_excluir = []
                 if fotos_atuais:
@@ -426,7 +440,6 @@ with aba_editar:
                                 fotos_a_excluir.append(url_f)
                 nova_foto_add = st.file_uploader("Adicionar nova foto principal", type=["jpg", "jpeg", "png"], key="add_p_foto")
 
-                # Gestão de Fotos de Tatuagens
                 tattoos_atuais = extrair_lista_fotos(reg_edit.get("tatuagem_url"))
                 tattoos_a_excluir = []
                 if tattoos_atuais:
@@ -441,6 +454,8 @@ with aba_editar:
                 nova_tattoo_add = st.file_uploader("Adicionar nova foto de tatuagem", type=["jpg", "jpeg", "png"], key="add_t_foto")
                 
                 if st.form_submit_button("💾 Salvar Alterações"):
+                    idade_calculada = calcular_idade(nova_nasc)
+                    
                     fotos_finais = [f for f in fotos_atuais if f not in fotos_a_excluir]
                     if nova_foto_add is not None:
                         id_foto = int(pd.Timestamp.now().timestamp())
@@ -458,7 +473,7 @@ with aba_editar:
                         tattoos_finais.append(supabase.storage.from_("fotos").get_public_url(nome_t))
                     
                     supabase.table("pessoas").update({
-                        "nome": novo_nome, "idade": nova_idade, "cpf": novo_cpf,
+                        "nome": novo_nome, "idade": idade_calculada, "cpf": novo_cpf,
                         "data_nascimento": nova_nasc, "nome_mae": novo_mae,
                         "zona": nova_zona, "enderecos": novos_enderecos,
                         "crimes": novos_crimes, "bos_ips": novos_bos_ips,
@@ -468,9 +483,6 @@ with aba_editar:
                     st.success("Atualizado com sucesso!")
                     st.rerun()
 
-# =========================================================
-# ABA: CADASTRAR / ANEXAR FOTO
-# =========================================================
 with aba_cadastro:
     st.header("Cadastrar / Anexar Fotos")
     tipo_op = st.radio("Selecione:", ["➕ Cadastrar Novo Indivíduo", "🖼️ Anexar Foto Existente"])
@@ -479,8 +491,7 @@ with aba_cadastro:
             c1, c2 = st.columns(2)
             with c1:
                 nome = st.text_input("Nome Completo*")
-                idade = st.text_input("Idade")
-                data_nasc = st.text_input("Data de Nascimento (Ex: 01/03/2000)")
+                data_nasc = st.text_input("Data de Nascimento (Ex: 31/08/2004)")
                 cpf = st.text_input("CPF")
                 zona_s = st.selectbox("Zona*", ["ZN - Zona Norte", "Zona Sul", "Zona Leste", "Zona Oeste", "Outra / Região Metropolitana"])
             with c2:
@@ -497,6 +508,7 @@ with aba_cadastro:
             
             if st.form_submit_button("☁️ Salvar"):
                 if nome and crimes:
+                    idade_calculada = calcular_idade(data_nasc)
                     cpf_limpo = cpf.strip() if cpf else ""
                     id_unico = int(pd.Timestamp.now().timestamp())
                     url_f = ""
@@ -515,7 +527,7 @@ with aba_cadastro:
                         url_t = supabase.storage.from_("fotos").get_public_url(nome_t)
                     
                     supabase.table("pessoas").insert({
-                        "id": id_unico, "nome": nome, "idade": idade, "cpf": cpf_limpo,
+                        "id": id_unico, "nome": nome, "idade": idade_calculada, "cpf": cpf_limpo,
                         "data_nascimento": data_nasc, "nome_mae": nome_mae,
                         "zona": zona_s, "enderecos": enderecos, "crimes": crimes,
                         "bos_ips": bos_ips, 
@@ -694,58 +706,50 @@ with aba_ai:
                     st.error(f"Erro ao processar com a API do Gemini: {e}")
 
 # =========================================================
-# ABA: TATUAGENS E MARCAS (DISCRETA NO FINAL)
+# ABA: GALERIA DE TATUAGENS E MARCAS (DIRETA PARA O INDIVÍDUO)
 # =========================================================
 with aba_tatuagens:
-    st.header("🎨 Consulta de Tatuagens e Marcas Distintas")
-    st.caption("Filtro automático de indivíduos que possuem menção ou imagens de tatuagens, cicatrizes e marcas em seus registros.")
+    st.header("🎨 Galeria Geral de Tatuagens e Marcas Distintas")
+    st.caption("Exibição visual de todas as tatuagens cadastradas no sistema. Ao selecionar ou visualizar uma tatuagem, você identifica o indivíduo associado.")
     
     if df_registros.empty:
         st.info("Nenhum registro cadastrado no banco de dados.")
     else:
-        termos_busca_tattoo = ["tatuagem", "tattoo", "tatoo", "marca", "cicatriz", "desenho", "símbolo"]
-        
-        def tem_tattoo(row):
-            texto_geral = f"{str(row.get('crimes', ''))} {str(row.get('enderecos', ''))} {str(row.get('bos_ips', ''))}".lower()
+        # Coleta todas as tatuagens cadastradas no banco
+        tattoos_global = []
+        for _, row in df_registros.iterrows():
             tattoos_lista = extrair_lista_fotos(row.get("tatuagem_url"))
-            return any(termo in texto_geral for termo in termos_busca_tattoo) or len(tattoos_lista) > 0
-            
-        df_tattoos = df_registros[df_registros.apply(tem_tattoo, axis=1)]
-        
-        if df_tattoos.empty:
-            st.warning("⚠️ Nenhum indivíduo com registro de tatuagens ou marcas foi encontrado no banco de dados.")
+            for t_url in tattoos_lista:
+                tattoos_global.append({
+                    "tattoo_url": t_url,
+                    "nome": row["nome"],
+                    "cpf": row.get("cpf", "N/A"),
+                    "nascimento": row.get("data_nascimento", "N/A"),
+                    "mae": row.get("nome_mae", "N/A"),
+                    "zona": row.get("zona", "N/A"),
+                    "crimes": row.get("crimes", "N/A"),
+                    "foto_perfil": extrair_lista_fotos(row.get("foto_url"))
+                })
+                
+        if not tattoos_global:
+            st.warning("⚠️ Nenhuma imagem de tatuagem foi cadastrada no sistema até o momento.")
         else:
-            st.success(f"🔍 **{len(df_tattoos)}** indivíduo(s) com registros de tatuagens ou marcas encontrados.")
+            st.success(f"🔍 **{len(tattoos_global)}** imagem(ns) de tatuagem encontrada(s) no banco de dados.")
             st.divider()
             
-            for index, row in df_tattoos.reset_index(drop=True).iterrows():
-                col_img, col_dados = st.columns([1, 3])
-                fotos = extrair_lista_fotos(row.get("foto_url"))
-                
-                with col_img:
-                    if fotos:
-                        st.image(fotos[0], width=160, caption=f"Foto Principal ({len(fotos)} foto(s))")
-                    else:
-                        st.image("https://via.placeholder.com/160?text=Sem+Foto", width=160)
-                
-                with col_dados:
-                    st.subheader(f"{row['nome']}")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown(f"**Data Nasc.:** {row.get('data_nascimento', 'N/A')}")
-                        st.markdown(f"**CPF:** {row.get('cpf', 'N/A')}")
-                    with c2:
-                        st.markdown(f"**Nome da Mãe:** {row.get('nome_mae', 'N/A')}")
-                        st.markdown(f"**Zona:** `{row.get('zona', 'Não Informado')}`")
-                        
-                    st.markdown(f"**Detalhes / Marcas / Crimes:**\n{row.get('crimes', 'N/A')}")
+            # Exibe em grade estilo galeria
+            cols = st.columns(3)
+            for idx, item in enumerate(tattoos_global):
+                with cols[idx % 3]:
+                    st.image(item["tattoo_url"], use_column_width=True, caption=f"Tatuagem de {item['nome']}")
+                    st.markdown(f"[🔗 Abrir imagem em tamanho real]({item['tattoo_url']})", unsafe_allow_html=True)
                     
-                    tattoos_ind = extrair_lista_fotos(row.get("tatuagem_url"))
-                    if tattoos_ind:
-                        st.markdown("**Imagens das Tatuagens:**")
-                        t_cols = st.columns(min(len(tattoos_ind), 3))
-                        for t_idx, t_url in enumerate(tattoos_ind):
-                            with t_cols[t_idx % 3]:
-                                st.image(t_url, width=140, caption=f"Tatuagem {t_idx+1}")
-                                st.markdown(f"[🔗 Abrir em tamanho real]({t_url})", unsafe_allow_html=True)
-                st.divider()
+                    with st.expander(f"👤 Ver Indivíduo: {item['nome']}"):
+                        if item["foto_perfil"]:
+                            st.image(item["foto_perfil"][0], width=120, caption="Perfil")
+                        st.markdown(f"**Nome:** {item['nome']}")
+                        st.markdown(f"**Data Nasc.:** {item['nascimento']} | **CPF:** {item['cpf']}")
+                        st.markdown(f"**Mãe:** {item['mae']}")
+                        st.markdown(f"**Zona:** `{item['zona']}`")
+                        st.markdown(f"**Detalhes:** {item['crimes']}")
+                    st.divider()
