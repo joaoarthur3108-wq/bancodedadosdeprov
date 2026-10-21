@@ -254,7 +254,6 @@ df_registros = carregar_dados()
 st.title("📁 Sistema de Registros e Rastreamento Regional")
 st.caption("☁️ Banco na nuvem (Supabase) | 🗺️ Divisão Regional e Telemetria")
 
-# Aba de Tatuagens colocada discretamente no final (fora do primeiro plano)
 aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml, aba_ai, aba_tatuagens = st.tabs([
     "🌐 Todos os Registros",
     "🔴 Zona Norte (ZN)",
@@ -336,11 +335,11 @@ with aba_oeste:
     exibir_cards(df_registros[df_registros["zona"].astype(str).str.upper().str.contains("OESTE", na=False)], "oeste")
 
 # =========================================================
-# ABA: GALERIA DO INDIVÍDUO
+# ABA: GALERIA DO INDIVÍDUO (COM SEÇÃO SECUNDÁRIA DE TATUAGENS)
 # =========================================================
 with aba_galeria:
     st.header("👥 Galeria de Fotos por Indivíduo")
-    st.caption("Visualização detalhada em alta resolução das fotografias cadastradas.")
+    st.caption("Visualização detalhada em alta resolução das fotografias e sinais distintivos cadastrados.")
     if not df_registros.empty:
         opcoes_pessoas = [f"{row['nome']} | CPF: {row.get('cpf', 'N/A')} (ID: {row['id']})" for _, row in df_registros.iterrows()]
         selecionado = st.selectbox("Selecione o indivíduo:", opcoes_pessoas, key="galeria_select")
@@ -350,6 +349,7 @@ with aba_galeria:
             st.subheader(f"📌 {reg['nome']}")
             st.markdown(f"**CPF:** {reg.get('cpf', 'N/A')} | **Nascimento:** {reg.get('data_nascimento', 'N/A')} | **Mãe:** {reg.get('nome_mae', 'N/A')}")
             st.markdown(f"**Zona:** `{reg.get('zona', 'N/A')}`")
+            
             fotos = extrair_lista_fotos(reg.get("foto_url"))
             if fotos:
                 st.markdown("---")
@@ -360,6 +360,15 @@ with aba_galeria:
                         st.markdown(f"[🔗 Abrir imagem em tamanho real]({url_foto})", unsafe_allow_html=True)
             else: 
                 st.info("Nenhuma foto anexada para este indivíduo.")
+                
+            # Seção secundária de Tatuagens e Marcas na Galeria
+            st.markdown("---")
+            st.markdown("### 🎨 Tatuagens, Marcas e Sinais Distintos (Informações Secundárias)")
+            crimes_txt = str(reg.get("crimes", ""))
+            if crimes_txt and crimes_txt != "nan":
+                st.info(f"{crimes_txt}")
+            else:
+                st.caption("Nenhum registro específico de tatuagens ou marcas informado para este indivíduo.")
 
 # =========================================================
 # ABA: EDITAR REGISTROS (COM EXCLUSÃO DE FOTOS)
@@ -642,7 +651,6 @@ with aba_tatuagens:
     if df_registros.empty:
         st.info("Nenhum registro cadastrado no banco de dados.")
     else:
-        # Filtra registros que possuem palavras-chave de tatuagens/marcas nos crimes ou endereços
         termos_busca_tattoo = ["tatuagem", "tattoo", "tatoo", "marca", "cicatriz", "desenho", "símbolo"]
         
         def tem_tattoo(row):
