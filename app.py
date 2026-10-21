@@ -250,7 +250,7 @@ df_registros = carregar_dados()
 st.title("📁 Sistema de Registros e Rastreamento Regional")
 st.caption("☁️ Banco na nuvem (Supabase) | 🗺️ Divisão Regional e Telemetria")
 
-aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml = st.tabs([
+aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_cadastro, aba_kml, aba_ai = st.tabs([
     "🌐 Todos os Registros",
     "🔴 Zona Norte (ZN)",
     "🟢 Zona Sul",
@@ -259,7 +259,8 @@ aba_todos, aba_zn, aba_sul, aba_leste, aba_oeste, aba_galeria, aba_editar, aba_c
     "👥 Galeria do Indivíduo",
     "✏️ Editar Registros",
     "➕ Cadastrar / Anexar Foto",
-    "🗺️ Conversor Rastreamento (KML)"
+    "🗺️ Conversor Rastreamento (KML)",
+    "🤖 Análise Investigativa (Gemini)"
 ])
 
 def exibir_cards(df_sub, chave_aba):
@@ -550,3 +551,61 @@ with aba_kml:
                     file_name=nome_kml_saida,
                     mime="application/vnd.google-earth.kml+xml"
                 )
+
+# =========================================================
+# ABA: ANÁLISE INVESTIGATIVA COM GEMINI AI
+# =========================================================
+with aba_ai:
+    st.header("🤖 Análise Investigativa com Inteligência Artificial (Gemini)")
+    st.caption("Envie uma fotografia para análise de características e cruzamento inteligente com os registros do banco de dados.")
+    
+    foto_ai = st.file_uploader("Selecione a foto para análise investigativa", type=["jpg", "jpeg", "png"], key="upload_gemini")
+    
+    if foto_ai is not None:
+        st.image(foto_ai, width=300, caption="Foto para Análise")
+        
+        pergunta_investigativa = st.text_input("Instrução ou pergunta para a IA:", value="Analise esta imagem, descreva características marcantes (físicas, vestimentas, acessórios) e verifique se há compatibilidade com os crimes ou perfis cadastrados no sistema.")
+        
+        if st.button("🚀 Executar Análise com Gemini", type="primary"):
+            api_key_gemini = st.secrets.get("GEMINI_API_KEY", "")
+            if not api_key_gemini:
+                st.error("⚠️ A chave `GEMINI_API_KEY` não foi configurada nas Secrets do Streamlit Cloud.")
+            else:
+                try:
+                    from google import genai
+                    from PIL import Image
+                    
+                    client = genai.Client(api_key=api_key_gemini)
+                    
+                    # Prepara a imagem para o Gemini
+                    imagem_pil = Image.open(foto_ai)
+                    
+                    # Monta o contexto resumido do banco de dados para a IA cruzar as informações
+                    resumo_banco = []
+                    for _, r in df_registros.iterrows():
+                        resumo_banco.append(f"- Nome: {r.get('nome')}, CPF: {r.get('cpf')}, Zona: {r.get('zona')}, Crimes: {r.get('crimes')}, BOs/IPs: {r.get('bos_ips')}")
+                    
+                    contexto_banco_str = "\n".join(resumo_banco) if resumo_banco else "Nenhum registro no banco."
+                    
+                    prompt_completo = f"""
+                    Você é um analista de inteligência e investigação policial sênior. 
+                    Analise a fotografia anexada e responda à seguinte instrução: {pergunta_investigativa}
+                    
+                    Abaixo estão os registros atuais cadastrados no banco de dados da instituição para cruzamento:
+                    {contexto_banco_str}
+                    
+                    Forneça um relatório investigativo claro, destacando possíveis correspondências, semelhanças ou análises comportamentais/físicas úteis para a investigação.
+                    """
+                    
+                    with st.spinner("Analisando imagem com o Gemini..."):
+                        response = client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=[imagem_pil, prompt_completo]
+                        )
+                        
+                        st.markdown("---")
+                        st.markdown("### 📋 Relatório de Análise da IA")
+                        st.write(response.text)
+                        
+                except Exception as e:
+                    st.error(f"Erro ao processar com a API do Gemini: {e}")
